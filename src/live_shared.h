@@ -18,6 +18,10 @@ struct LiveShared {
     volatile LONG bass_tenths;
     volatile LONG brightness_tenths;
     volatile LONG mix_milli;
+    // Audio-process diagnostics are written independently of GUI config version.
+    volatile LONG meter_input_db;   // 0..1000, maps -70..0 dBFS
+    volatile LONG meter_output_db;  // 0..1000, maps -70..0 dBFS
+    volatile LONG voice_probability_milli;
 };
 struct LiveValues {
     LONG gain_tenths=0;
