@@ -16,6 +16,11 @@ Questa versione include interfaccia grafica Win32 e strumento CLI. Elabora **fil
 
 Il timbro cambia l'equalizzazione, **non** corregge i formanti come un modello AI. Il pitch shifter puo produrre artefatti. Una voce femminile naturale non e garantita. Il noise gate non distingue una parola da un rumore forte: **RNNoise e VAD restano da implementare**.
 
+## Lavori in corso — passo 1: input WASAPI reale (non ancora validato su hardware)
+Il sorgente `src/live_capture_win.cpp` aggiunge una utility di **diagnostica** Windows per enumerare i microfoni, individuare ASTRO A50 Voice e registrare direttamente 10 secondi su WAV con indicatore di livello in dBFS. Nella build viene chiamata `A50VoiceClean-MicTest.exe`.
+
+La compilazione Windows è affidata a GitHub Actions; prima di dichiarare completato il passo sono indispensabili la verifica del workflow e un test sulle vere cuffie Astro A50 Gen 4. Questa utility non è una release per l'uso quotidiano e non sostituisce l'applicazione live finale. La checklist e le istruzioni sono in [docs/STEP_01_WASAPI.md](docs/STEP_01_WASAPI.md).
+
 ## Hardware di riferimento
 
 - Astro A50 Gen 4, firmware cuffie 39964.43, firmware base 40372.43
