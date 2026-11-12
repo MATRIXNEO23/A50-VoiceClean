@@ -184,6 +184,14 @@ struct Queue {
         if(!length) {++underflow; return 0.f;}
         float v=buf[head];head=(head+1)%buf.size();--length;return v;
     }
+    // Do not let scheduling drift turn into multi-second latency.
+    void trim_to(std::size_t max_frames) {
+        if(length<=max_frames) return;
+        const auto drop=length-max_frames;
+        head=(head+drop)%buf.size();
+        length=max_frames;
+        lost+=drop;
+    }
     std::size_t size() const {return length;}
 };
 struct Resampler {
@@ -277,6 +285,7 @@ void route(IMMDevice* microphone, IMMDevice* destination,
                     check(capture->ReleaseBuffer(frames),"Capture ReleaseBuffer");
                     dsp.process(block.data(),block.size());
                     for(float sample:block) resampler.feed(sample,queue);
+                    queue.trim_to(static_cast<std::size_t>(out.rate)*200/1000);
                     captured+=frames;
                     check(capture->GetNextPacketSize(&available),"GetNextPacketSize");
                 }
