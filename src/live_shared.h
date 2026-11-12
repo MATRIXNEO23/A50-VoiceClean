@@ -18,6 +18,8 @@ struct LiveShared {
     volatile LONG bass_tenths;
     volatile LONG brightness_tenths;
     volatile LONG mix_milli;
+    volatile LONG monitor_enabled;
+    volatile LONG monitor_volume_milli;
     // Audio-process diagnostics are written independently of GUI config version.
     volatile LONG meter_input_db;   // 0..1000, maps -70..0 dBFS
     volatile LONG meter_output_db;  // 0..1000, maps -70..0 dBFS
@@ -33,6 +35,8 @@ struct LiveValues {
     LONG bass_tenths=-30;
     LONG brightness_tenths=20;
     LONG mix_milli=1000;
+    LONG monitor_enabled=0;
+    LONG monitor_volume_milli=350;
 };
 inline LONG read_atomic(volatile LONG* p) {
     return InterlockedCompareExchange(p,0,0);
@@ -48,6 +52,8 @@ inline void publish(LiveShared* s,const LiveValues& v) {
     InterlockedExchange(&s->bass_tenths,v.bass_tenths);
     InterlockedExchange(&s->brightness_tenths,v.brightness_tenths);
     InterlockedExchange(&s->mix_milli,v.mix_milli);
+    InterlockedExchange(&s->monitor_enabled,v.monitor_enabled);
+    InterlockedExchange(&s->monitor_volume_milli,v.monitor_volume_milli);
     InterlockedIncrement(&s->sequence); // even: consistent snapshot
 }
 inline bool snapshot(LiveShared* s, LiveValues& out, LONG& version) {
@@ -64,6 +70,8 @@ inline bool snapshot(LiveShared* s, LiveValues& out, LONG& version) {
         current.bass_tenths=read_atomic(&s->bass_tenths);
         current.brightness_tenths=read_atomic(&s->brightness_tenths);
         current.mix_milli=read_atomic(&s->mix_milli);
+        current.monitor_enabled=read_atomic(&s->monitor_enabled);
+        current.monitor_volume_milli=read_atomic(&s->monitor_volume_milli);
         const LONG after=read_atomic(&s->sequence);
         if(before==after && !(after&1)) {
             out=current;
