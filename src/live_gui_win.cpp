@@ -3,6 +3,7 @@
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "live_shared.h"
 #include <commctrl.h>
 #include <mmdeviceapi.h>
 #include <functiondiscoverykeys_devpkey.h>
@@ -31,7 +32,8 @@ HWND pitch_value=nullptr,resonance_value=nullptr,bass_value=nullptr,
      brightness_value=nullptr,mix_value=nullptr;
 HFONT font=nullptr;
 PROCESS_INFORMATION process{};
-HANDLE stop_event=nullptr,job=nullptr;
+HANDLE stop_event=nullptr,job=nullptr,config_mapping=nullptr;
+a50::LiveShared* shared_config=nullptr;
 std::vector<std::wstring> inputs,outputs;
 
 void check(HRESULT hr,const char* op) {
@@ -120,6 +122,20 @@ void values() {
       (std::to_wstring(slider(brightness_slider))+L" dB").c_str());
     SetWindowTextW(mix_value,(std::to_wstring(slider(mix_slider))+L" %").c_str());
 }
+void publish_live_settings() {
+    if(!shared_config) return;
+    a50::LiveValues v;
+    v.gain_tenths=slider(gain_slider)*10;
+    v.probability_milli=slider(probability_slider)*10;
+    v.min_voice_db_tenths=slider(floor_slider)*10;
+    v.voice_enabled=SendMessageW(voice_check,BM_GETCHECK,0,0)==BST_CHECKED?1:0;
+    v.pitch_tenths=slider(pitch_slider)*10;
+    v.resonance_milli=slider(resonance_slider)*10;
+    v.bass_tenths=slider(bass_slider)*10;
+    v.brightness_tenths=slider(brightness_slider)*10;
+    v.mix_milli=slider(mix_slider)*10;
+    a50::publish(shared_config,v);
+}
 bool running() {
     if(!process.hProcess) return false;
     return WaitForSingleObject(process.hProcess,0)==WAIT_TIMEOUT;
@@ -131,6 +147,8 @@ void cleanup() {
     }
     if(job) {CloseHandle(job);job=nullptr;}
     if(stop_event) {CloseHandle(stop_event);stop_event=nullptr;}
+    if(shared_config) {UnmapViewOfFile(shared_config);shared_config=nullptr;}
+    if(config_mapping) {CloseHandle(config_mapping);config_mapping=nullptr;}
 }
 void stop_engine() {
     if(process.hProcess) {
@@ -192,14 +210,27 @@ void start_engine() {
         }
         const std::wstring event_name=L"Local\\A50VoiceCleanStop_"+
                                      std::to_wstring(GetCurrentProcessId());
+        const std::wstring config_name=L"Local\\A50VoiceCleanConfig_"+
+                                     std::to_wstring(GetCurrentProcessId());
         stop_event=CreateEventW(nullptr,TRUE,FALSE,event_name.c_str());
         if(!stop_event) {CloseHandle(logfile);CloseHandle(nul);throw std::runtime_error("Errore evento stop");}
+        config_mapping=CreateFileMappingW(INVALID_HANDLE_VALUE,nullptr,PAGE_READWRITE,
+                                           0,sizeof(a50::LiveShared),config_name.c_str());
+        if(!config_mapping) {
+            CloseHandle(logfile);CloseHandle(nul);throw std::runtime_error("Errore memoria condivisa");
+        }
+        shared_config=static_cast<a50::LiveShared*>(MapViewOfFile(
+                         config_mapping,FILE_MAP_ALL_ACCESS,0,0,sizeof(a50::LiveShared)));
+        if(!shared_config) {
+            CloseHandle(logfile);CloseHandle(nul);throw std::runtime_error("Errore mappatura");
+        }
+        publish_live_settings();
         std::wstring args=L"\""+executable.wstring()+L"\" --input "+
             std::to_wstring(input)+L" --output "+std::to_wstring(output)+
             L" --gain-db "+std::to_wstring(slider(gain_slider))+
             L" --vad-prob "+std::to_wstring(slider(probability_slider)/100.0)+
             L" --voice-min-db "+std::to_wstring(slider(floor_slider))+
-            L" --stop-event \""+event_name+L"\"";
+            L" --stop-event \""+event_name+L"\" --config-map \""+config_name+L"\"";
         if(SendMessageW(denoise_check,BM_GETCHECK,0,0)!=BST_CHECKED) args+=L" --no-denoise";
         if(SendMessageW(vad_check,BM_GETCHECK,0,0)!=BST_CHECKED) args+=L" --no-vad";
         if(SendMessageW(voice_check,BM_GETCHECK,0,0)==BST_CHECKED) {
@@ -294,18 +325,22 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         start_button=control(L"BUTTON",L"Avvia",BS_PUSHBUTTON,20,483,130,34,Start);
         stop_button=control(L"BUTTON",L"Ferma",BS_PUSHBUTTON,165,483,130,34,Stop);
         EnableWindow(stop_button,FALSE);
-        control(L"STATIC",L"Le modifiche si applicano al prossimo Avvia. La velocita audio live resta invariata.",0,20,528,955,22);
+        control(L"STATIC",L"Cursori regolabili in diretta. RNNoise/VAD richiedono riavvio. Velocita live invariata.",0,20,528,955,22);
         status_text=control(L"STATIC",L"Caricamento dispositivi...",0,20,557,955,35);
         try {populate();} catch(...) {message(L"Impossibile leggere i dispositivi audio.");}
         SetTimer(h,1,1000,nullptr);
         return 0;
     }
-    case WM_HSCROLL: values();return 0;
+    case WM_HSCROLL: values();publish_live_settings();return 0;
     case WM_COMMAND:
         switch(LOWORD(w)) {
         case Refresh: if(!running()){try{populate();}catch(...){message(L"Errore lettura dispositivi.");}}return 0;
         case Start: start_engine();return 0;
         case Stop: stop_engine();return 0;
+        case VoiceCheck: publish_live_settings();return 0;
+        case DenoiseCheck: case VadCheck:
+            if(running()) message(L"Per cambiare RNNoise o VAD premi Ferma e poi Avvia.");
+            return 0;
         }
         return 0;
     case WM_TIMER:
