@@ -5,6 +5,7 @@
 #include "dsp.h"
 #include "live_buffer.h"
 #include "rnnoise_filter.h"
+#include "voice_gate.h"
 #include <windows.h>
 #include <audioclient.h>
 #include <mmdeviceapi.h>
@@ -182,14 +183,16 @@ void help() {
       L"  A50VoiceClean-Live.exe --list\n"
       L"  A50VoiceClean-Live.exe --input N --output N [--seconds 30]\n"
       L"  [--gain-db N] [--threshold-db N] [--no-gate] [--no-highpass]\n"
-      L"  [--allow-speaker-output] [--no-denoise]\n\n"
+      L"  [--allow-speaker-output] [--no-denoise] [--no-vad]\n"
+      L"  [--vad-prob 0.65] [--voice-min-db -46]\n\n"
       L"Defaults: ASTRO A50 Voice input and VB-CABLE/CABLE Input output.\n"
       L"For safety the output must be a virtual cable unless --allow-speaker-output.\n"
       L"Run with --seconds 0 (default) to stop using Ctrl+C.\n"
-      L"RNNoise is ON by default; true VAD and voice changing are not live yet.\n";
+      L"RNNoise and speech gate are ON by default. Live voice changing is not ready.\n";
 }
 void route(IMMDevice* microphone, IMMDevice* destination,
-           a50::Settings settings, int duration, bool denoise_enabled) {
+           a50::Settings settings, int duration, bool denoise_enabled,
+           bool vad_enabled, a50::VoiceGate::Options vad_options) {
     ComPtr<IAudioClient> input, output;
     check(microphone->Activate(__uuidof(IAudioClient),CLSCTX_ALL,nullptr,&input),
           "Activate input");
@@ -218,6 +221,9 @@ void route(IMMDevice* microphone, IMMDevice* destination,
     Resampler from_48k(48000,out.rate);
     Queue pending_48k(48000);
     std::array<float,480> denoised_frame{};
+    std::array<float,480> gated_frame{};
+    std::unique_ptr<a50::VoiceGate> vad;
+    if(vad_enabled) vad=std::make_unique<a50::VoiceGate>(vad_options);
     std::unique_ptr<a50::RNNoiseFilter> denoiser;
     if(denoise_enabled) denoiser=std::make_unique<a50::RNNoiseFilter>();
     a50::Processor dsp(in.rate,settings);
@@ -259,9 +265,18 @@ void route(IMMDevice* microphone, IMMDevice* destination,
                     if(denoiser) {
                         for(float sample:block) to_48k.feed(sample,pending_48k);
                         while(pending_48k.size()) {
-                            if(denoiser->feed(pending_48k.pop(),denoised_frame))
-                                for(float sample:denoised_frame)
-                                    from_48k.feed(sample,queue);
+                            if(denoiser->feed(pending_48k.pop(),denoised_frame)) {
+                                if(vad) {
+                                    if(vad->feed(denoised_frame,
+                                                 denoiser->last_voice_probability(),
+                                                 gated_frame))
+                                        for(float sample:gated_frame)
+                                            from_48k.feed(sample,queue);
+                                } else {
+                                    for(float sample:denoised_frame)
+                                        from_48k.feed(sample,queue);
+                                }
+                            }
                         }
                     } else {
                         for(float sample:block) resampler.feed(sample,queue);
@@ -313,7 +328,8 @@ void route(IMMDevice* microphone, IMMDevice* destination,
 int wmain(int argc,wchar_t** argv) {
     try {
         int selected_in=-1,selected_out=-1,seconds=0;
-        bool list_only=false,allow_speakers=false,denoise_enabled=true;
+        bool list_only=false,allow_speakers=false,denoise_enabled=true,vad_enabled=true;
+        a50::VoiceGate::Options vad_options;
         a50::Settings settings;
         for(int i=1;i<argc;++i) {
             std::wstring option=argv[i];
@@ -322,6 +338,9 @@ int wmain(int argc,wchar_t** argv) {
             else if(option==L"--allow-speaker-output") allow_speakers=true;
             else if(option==L"--no-gate") settings.gate_enabled=false;
             else if(option==L"--no-denoise") denoise_enabled=false;
+            else if(option==L"--no-vad") vad_enabled=false;
+            else if(option==L"--vad-prob" && i+1<argc) vad_options.probability_threshold=std::stof(argv[++i]);
+            else if(option==L"--voice-min-db" && i+1<argc) vad_options.minimum_voice_db=std::stof(argv[++i]);
             else if(option==L"--no-highpass") settings.highpass_enabled=false;
             else if(option==L"--input" && i+1<argc) selected_in=std::stoi(argv[++i]);
             else if(option==L"--output" && i+1<argc) selected_out=std::stoi(argv[++i]);
@@ -356,7 +375,10 @@ int wmain(int argc,wchar_t** argv) {
                    << L"\nOutput: " << outs[selected_out].name << L"\n";
         if(!SetConsoleCtrlHandler(on_console_event,TRUE))
             throw std::runtime_error("Could not register Ctrl+C handler");
-        route(ins[selected_in].device.Get(),outs[selected_out].device.Get(),settings,seconds,denoise_enabled);
+        if(!denoise_enabled) vad_enabled=false;
+        // Avoid doubling the gate: the speech-aware VAD replaces the old amplitude-only gate.
+        if(vad_enabled) settings.gate_enabled=false;
+        route(ins[selected_in].device.Get(),outs[selected_out].device.Get(),settings,seconds,denoise_enabled,vad_enabled,vad_options);
         return 0;
     } catch(const std::exception& e) {
         std::cerr << "A50 VoiceClean live route: " << e.what() << "\n";
