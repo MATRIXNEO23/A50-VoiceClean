@@ -2,6 +2,7 @@
 #include "transform.h"
 #include "live_capture_win.h"
 #include <windows.h>
+#include <objbase.h>
 #include <commctrl.h>
 #include <cwctype>
 #include <memory>
