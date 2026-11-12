@@ -1,4 +1,4 @@
-name: Build and test Windows prototype
+name: Build and test Windows voice editor
 on:
   push:
   pull_request:
@@ -13,9 +13,21 @@ jobs:
         run: cmake --build build --config Release
       - name: Tests
         run: ctest --test-dir build -C Release --output-on-failure
-      - name: Upload prototype executable
+      - name: Upload editor and CLI executables
         uses: actions/upload-artifact@v4
         with:
-          name: A50-VoiceClean-offline-prototype-win64
-          path: build/Release/a50voiceclean.exe
+          name: A50-VoiceClean-v0.2-Windows-x64
+          path: |
+            build/Release/A50VoiceClean-GUI.exe
+            build/Release/a50voiceclean.exe
           if-no-files-found: error
+  linux-dsp:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test DSP
+        run: ctest --test-dir build --output-on-failure
