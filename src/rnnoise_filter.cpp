@@ -1,5 +1,7 @@
 #include "rnnoise_filter.h"
-#include "rnnoise.h"
+extern "C" {
+#include "rnnoise.h" // Pinned Windows fork header has no C++ linkage guards.
+}
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
