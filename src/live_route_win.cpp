@@ -193,7 +193,7 @@ class HeadphoneMonitor {
     std::unique_ptr<Queue> fifo_;
     std::unique_ptr<Resampler> resampler_;
     bool started_=false, primed_=false, enabled_=false;
-    float volume_=0.35f;
+    float volume_=0.35f, gain_=0.f;
 public:
     HeadphoneMonitor(IMMDevice* endpoint,unsigned source_rate) {
         check(endpoint->Activate(__uuidof(IAudioClient),CLSCTX_ALL,nullptr,&client_),
@@ -236,7 +236,11 @@ public:
         for(UINT32 i=0;i<free_frames;++i) {
             // Pop even when muted: resuming the monitor must not replay stale audio.
             const float sample=primed_?fifo_->pop():0.f;
-            const float output=enabled_ ? sample*volume_ : 0.f;
+            const float target=enabled_?volume_:0.f;
+            // Smooth 15 ms ramp avoids pops when switching or moving slider.
+            const float coefficient=1.f-std::exp(-1.f/(0.015f*fmt_.rate));
+            gain_+=(target-gain_)*coefficient;
+            const float output=sample*gain_;
             BYTE* frame=data+static_cast<std::size_t>(i)*fmt_.block;
             for(unsigned ch=0;ch<fmt_.channels;++ch)
                 encode(frame+ch*fmt_.bytes,fmt_.kind,output);
@@ -328,6 +332,7 @@ void route(IMMDevice* microphone, IMMDevice* destination,
     std::uint64_t captured=0;
     float input_meter=0.f, output_meter=0.f;
     LONG last_settings_generation=-1;
+    float preview_gain=0.f;
     check(input->Start(),"Start input");
     try {
         check(output->Start(),"Start output");
@@ -425,8 +430,11 @@ void route(IMMDevice* microphone, IMMDevice* destination,
                         const float v=active?queue.pop():0.f;
                         output_peak=std::max(output_peak,std::fabs(v));
                         if(headphones) headphones->feed(v);
-                        const float routed=preview_only
-                            ? (monitor_enabled?v*monitor_volume:0.f) : v;
+                        const float preview_target=monitor_enabled?monitor_volume:0.f;
+                        if(preview_only)
+                            preview_gain+=(preview_target-preview_gain)*
+                                 (1.f-std::exp(-1.f/(0.015f*out.rate)));
+                        const float routed=preview_only?v*preview_gain:v;
                         BYTE* frame=data+static_cast<std::size_t>(i)*out.block;
                         for(unsigned c=0;c<out.channels;++c)
                             encode(frame+c*out.bytes,out.kind,routed);
