@@ -1,7 +1,10 @@
-// Win32 offline WAV editor. Not a live microphone; WASAPI is a future milestone.
+// Win32 editor with first-stage WASAPI capture and level meter.
 #include "transform.h"
+#include "live_capture_win.h"
 #include <windows.h>
 #include <commctrl.h>
+#include <cwctype>
+#include <memory>
 #include <commdlg.h>
 #include <mmsystem.h>
 #include <algorithm>
@@ -16,7 +19,8 @@
 namespace {
 constexpr int OpenButton=100, PreviewButton=101, SaveButton=102;
 constexpr int GateCheck=103, VoiceCheck=104, ProfileCombo=105, SaveProfileButton=106;
-constexpr int ProfileNameEdit=107, SliderStart=200;
+constexpr int ProfileNameEdit=107, DeviceCombo=108, DeviceRefresh=109, LiveToggle=110;
+constexpr int CaptureTimer=1, SliderStart=200;
 constexpr std::array<const wchar_t*,8> names = {
     L"Guadagno voce", L"Soglia rumore", L"Tonalita (semitoni)", L"Timbro / risonanza",
     L"Bassi", L"Brillantezza", L"Intensita effetto", L"Velocita registrazione"
@@ -26,6 +30,10 @@ constexpr std::array<int,8> maxs={24,-15,12,100,12,12,100,130};
 constexpr std::array<int,8> defaults={0,-38,0,0,0,0,100,100};
 HWND main_window=nullptr, status_label=nullptr, gate_check=nullptr, voice_check=nullptr;
 HWND profile_combo=nullptr, profile_edit=nullptr;
+HWND device_combo=nullptr, device_toggle=nullptr, device_meter=nullptr, device_status=nullptr;
+std::vector<a50::InputDevice> input_devices;
+a50::LiveCapture live_capture;
+a50::CaptureStatus previous_capture_status = a50::CaptureStatus::stopped;
 std::array<HWND,8> sliders{};
 std::array<HWND,8> values{};
 std::filesystem::path input_path, preview_path;
@@ -128,6 +136,79 @@ void save_profile() {
     if(i>=0) SendMessageW(profile_combo,CB_SETCURSEL,i,0);
     status(L"Profilo salvato: "+n);
 }
+void refresh_microphones() {
+    if (live_capture.status() == a50::CaptureStatus::running ||
+        live_capture.status() == a50::CaptureStatus::starting) {
+        SetWindowTextW(device_status,L"Ferma l'acquisizione prima di aggiornare la lista.");
+        return;
+    }
+    SendMessageW(device_combo,CB_RESETCONTENT,0,0);
+    input_devices.clear();
+    try {
+        input_devices = a50::enumerate_input_devices();
+        int prefer = 0;
+        for (std::size_t i=0; i<input_devices.size(); ++i) {
+            const auto& d = input_devices[i];
+            SendMessageW(device_combo,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(d.name.c_str()));
+            std::wstring name = d.name;
+            std::transform(name.begin(),name.end(),name.begin(),
+                           [](wchar_t c){return static_cast<wchar_t>(std::towlower(c));});
+            if (name.find(L"astro a50 voice")!=std::wstring::npos)
+                prefer=static_cast<int>(i);
+        }
+        if (!input_devices.empty()) {
+            SendMessageW(device_combo,CB_SETCURSEL,prefer,0);
+            SetWindowTextW(device_status,L"Ingresso selezionato. Premi Avvia per controllare il livello voce.");
+        } else {
+            SetWindowTextW(device_status,L"Nessun microfono attivo trovato.");
+        }
+    } catch (...) {
+        SetWindowTextW(device_status,L"Errore: impossibile leggere i microfoni di Windows.");
+    }
+}
+void toggle_microphone() {
+    const auto capture_state = live_capture.status();
+    if (capture_state == a50::CaptureStatus::running ||
+        capture_state == a50::CaptureStatus::starting) {
+        live_capture.stop();
+        SetWindowTextW(device_status,L"Acquisizione microfono interrotta.");
+        previous_capture_status=a50::CaptureStatus::stopped;
+        SetWindowTextW(device_toggle,L"Avvia");
+        SendMessageW(device_meter,PBM_SETPOS,0,0);
+        return;
+    }
+    const int index=static_cast<int>(SendMessageW(device_combo,CB_GETCURSEL,0,0));
+    if(index<0 || static_cast<std::size_t>(index)>=input_devices.size()) {
+        SetWindowTextW(device_status,L"Seleziona prima un microfono.");
+        return;
+    }
+    try {
+        live_capture.start(input_devices[static_cast<std::size_t>(index)].id);
+        SetWindowTextW(device_toggle,L"Ferma");
+        SetWindowTextW(device_status,L"Avvio acquisizione...");
+    } catch (...) {
+        SetWindowTextW(device_status,L"Errore nell'avvio del thread audio.");
+    }
+}
+void refresh_meter() {
+    const auto state=live_capture.status();
+    const auto level=state==a50::CaptureStatus::running
+        ? live_capture.meter_percent() : 0;
+    SendMessageW(device_meter,PBM_SETPOS,level,0);
+    if(state!=previous_capture_status) {
+        previous_capture_status=state;
+        if(state==a50::CaptureStatus::running) {
+            SetWindowTextW(device_status,L"Microfono attivo: livello acquisito, senza uscita audio.");
+            SetWindowTextW(device_toggle,L"Ferma");
+        } else if(state==a50::CaptureStatus::failed) {
+            wchar_t error[100]{};
+            std::swprintf(error,100,L"Errore WASAPI 0x%08lX. Riprova o cambia ingresso.",
+                         static_cast<unsigned long>(live_capture.error()));
+            SetWindowTextW(device_status,error);
+            SetWindowTextW(device_toggle,L"Avvia");
+        }
+    }
+}
 std::filesystem::path choose_file(bool save) {
     wchar_t path[32768]{};
     if(save && !input_path.empty()) wcscpy_s(path,32768,L"voce_modificata.wav");
@@ -178,41 +259,55 @@ LRESULT CALLBACK proc(HWND w,UINT m,WPARAM wp,LPARAM lp) {
     case WM_CREATE: {
         main_window=w;
         font=static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-        control(L"STATIC",L"A50 VoiceClean | Editor WAV v0.2",0,18,10,460,24);
-        control(L"STATIC",L"Per ora: registrazioni WAV mono PCM16; NON modifica il microfono in diretta.",0,18,32,650,20);
-        control(L"BUTTON",L"Apri WAV",BS_PUSHBUTTON,18,58,105,28,OpenButton);
-        control(L"BUTTON",L"Ascolta 10 s",BS_PUSHBUTTON,132,58,116,28,PreviewButton);
-        control(L"BUTTON",L"Salva WAV",BS_PUSHBUTTON,256,58,116,28,SaveButton);
-        gate_check=control(L"BUTTON",L"Riduzione rumori (gate)",BS_AUTOCHECKBOX,390,60,205,22,GateCheck);
-        voice_check=control(L"BUTTON",L"Modifica voce",BS_AUTOCHECKBOX,595,60,126,22,VoiceCheck);
+        control(L"STATIC",L"A50 VoiceClean | Acquisizione microfono + Editor WAV",0,18,10,680,24);
+        control(L"STATIC",L"Ingresso microfono",0,18,40,154,20);
+        device_combo=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,165,35,326,250,DeviceCombo);
+        control(L"BUTTON",L"Aggiorna",BS_PUSHBUTTON,500,35,98,28,DeviceRefresh);
+        device_toggle=control(L"BUTTON",L"Avvia",BS_PUSHBUTTON,610,35,111,28,LiveToggle);
+        device_meter=control(PROGRESS_CLASSW,L"",PBS_SMOOTH,18,73,703,18);
+        SendMessageW(device_meter,PBM_SETRANGE32,0,100);
+        device_status=control(L"STATIC",L"Seleziona un microfono.",0,18,101,704,23);
+        control(L"STATIC",L"Acquisizione live: solo misurazione. Filtro e uscita virtuale non ancora attivi.",0,18,126,704,20);
+        control(L"BUTTON",L"Apri WAV",BS_PUSHBUTTON,18,152,105,28,OpenButton);
+        control(L"BUTTON",L"Ascolta 10 s",BS_PUSHBUTTON,132,152,116,28,PreviewButton);
+        control(L"BUTTON",L"Salva WAV",BS_PUSHBUTTON,256,152,116,28,SaveButton);
+        gate_check=control(L"BUTTON",L"Riduzione rumori (gate)",BS_AUTOCHECKBOX,390,154,205,22,GateCheck);
+        voice_check=control(L"BUTTON",L"Modifica voce",BS_AUTOCHECKBOX,595,154,126,22,VoiceCheck);
         for(int i=0;i<8;++i) {
-            const int y=104+i*53;
+            const int y=195+i*48;
             control(L"STATIC",names[i],0,20,y,230,18);
             sliders[i]=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,238,y-6,368,33,SliderStart+i);
             SendMessageW(sliders[i],TBM_SETRANGEMIN,FALSE,mins[i]);
             SendMessageW(sliders[i],TBM_SETRANGEMAX,FALSE,maxs[i]);
             values[i]=control(L"STATIC",L"",0,615,y,110,20);
         }
-        control(L"STATIC",L"Profili",0,20,535,95,20);
-        profile_combo=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,102,530,220,220,ProfileCombo);
-        control(L"STATIC",L"Nuovo nome",0,333,535,92,20);
-        profile_edit=control(L"EDIT",L"Mio profilo",WS_BORDER|ES_AUTOHSCROLL,424,531,150,24,ProfileNameEdit);
-        control(L"BUTTON",L"Salva profilo",BS_PUSHBUTTON,583,529,138,27,SaveProfileButton);
-        status_label=control(L"STATIC",L"Apri un file WAV per iniziare.",0,20,576,695,40);
+        control(L"STATIC",L"Profili",0,20,589,95,20);
+        profile_combo=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,102,585,220,200,ProfileCombo);
+        control(L"STATIC",L"Nuovo nome",0,333,590,92,20);
+        profile_edit=control(L"EDIT",L"Mio profilo",WS_BORDER|ES_AUTOHSCROLL,424,586,150,24,ProfileNameEdit);
+        control(L"BUTTON",L"Salva profilo",BS_PUSHBUTTON,583,585,138,27,SaveProfileButton);
+        status_label=control(L"STATIC",L"Editor WAV: apri una registrazione.",0,20,630,695,40);
         fill_profiles();set_profile(0);
+        refresh_microphones();
+        SetTimer(w,CaptureTimer,60,nullptr);
         return 0;
     }
     case WM_HSCROLL: update_values();return 0;
+    case WM_TIMER: if(wp==CaptureTimer) refresh_meter();return 0;
     case WM_COMMAND:
         switch(LOWORD(wp)) {
         case OpenButton: input_path=choose_file(false); if(!input_path.empty()) status(L"File: "+input_path.filename().wstring());return 0;
         case PreviewButton: process_wav(true);return 0;
         case SaveButton: process_wav(false);return 0;
         case SaveProfileButton: save_profile();return 0;
+        case DeviceRefresh: refresh_microphones();return 0;
+        case LiveToggle: toggle_microphone();return 0;
         case ProfileCombo: if(HIWORD(wp)==CBN_SELCHANGE) load_named_profile();return 0;
         }
         return 0;
     case WM_DESTROY:
+        KillTimer(w,CaptureTimer);
+        live_capture.stop();
         PlaySoundW(nullptr,nullptr,0);
         if(!preview_path.empty()) {std::error_code ec;std::filesystem::remove(preview_path,ec);}
         PostQuitMessage(0);return 0;
@@ -221,15 +316,18 @@ LRESULT CALLBACK proc(HWND w,UINT m,WPARAM wp,LPARAM lp) {
 }
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show) {
-    INITCOMMONCONTROLSEX cc{sizeof(cc),ICC_BAR_CLASSES};InitCommonControlsEx(&cc);
+    const HRESULT com=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+    if(FAILED(com)) return 1;
+    INITCOMMONCONTROLSEX cc{sizeof(cc),ICC_BAR_CLASSES|ICC_PROGRESS_CLASS};InitCommonControlsEx(&cc);
     WNDCLASSEXW wc{};wc.cbSize=sizeof(wc);wc.hInstance=instance;wc.lpszClassName=L"A50VoiceCleanOffline";
     wc.lpfnWndProc=proc;wc.hCursor=LoadCursor(nullptr,IDC_ARROW);
     wc.hbrBackground=reinterpret_cast<HBRUSH>(COLOR_WINDOW+1);
     RegisterClassExW(&wc);
     HWND w=CreateWindowExW(0,wc.lpszClassName,L"A50 VoiceClean - Editor vocale",WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME,
-      CW_USEDEFAULT,CW_USEDEFAULT,758,669,nullptr,nullptr,instance,nullptr);
-    if(!w)return 1;
+      CW_USEDEFAULT,CW_USEDEFAULT,758,717,nullptr,nullptr,instance,nullptr);
+    if(!w){CoUninitialize();return 1;}
     ShowWindow(w,show);UpdateWindow(w);
     MSG msg{};while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
+    CoUninitialize();
     return static_cast<int>(msg.wParam);
 }
