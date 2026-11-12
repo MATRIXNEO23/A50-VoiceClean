@@ -180,6 +180,47 @@ void refresh_profiles() {
         SendMessageW(profile_combo,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(p.c_str()));
     SendMessageW(profile_combo,CB_SETCURSEL,0,0);
 }
+void load_selected_profile() {
+    const int selected=static_cast<int>(SendMessageW(profile_combo,CB_GETCURSEL,0,0));
+    if(selected<0)return;
+    try {
+        a50::StoredProfile p;
+        if(selected<3) {
+            p.voice=selected!=0;
+            p.sliders={0,65,-46,selected==2?4:0,selected==2?35:(selected==1?20:0),
+                       selected==2?-3:(selected==1?-2:0),
+                       selected==2?2:(selected==1?4:0),selected==1?60:100};
+        } else {
+            wchar_t name[128]{};
+            SendMessageW(profile_combo,CB_GETLBTEXT,selected,reinterpret_cast<LPARAM>(name));
+            p=a50::load_profile_file(profile_path(),name);
+        }
+        apply_profile(p);
+        message(L"Profilo caricato. Le caselle RNNoise/VAD richiedono riavvio.");
+    } catch(...) {message(L"Impossibile leggere il profilo.");}
+}
+void save_current_profile() {
+    wchar_t text[128]{};
+    GetWindowTextW(profile_name,text,128);
+    const std::wstring name(text);
+    if(!a50::valid_profile_name(name)||name==L"Originale"||
+       name==L"Voce chiara"||name==L"Voce femminile leggera") {
+        MessageBoxW(window,L"Nome profilo non valido.",L"A50 VoiceClean",MB_OK|MB_ICONWARNING);
+        return;
+    }
+    try {
+        const auto path=profile_path();
+        if(a50::profile_exists(path,name) &&
+           MessageBoxW(window,L"Sovrascrivere il profilo esistente?",L"A50 VoiceClean",
+                       MB_YESNO|MB_ICONQUESTION)!=IDYES) return;
+        a50::save_profile_file(path,name,current_profile());
+        refresh_profiles();
+        const int i=static_cast<int>(SendMessageW(profile_combo,CB_FINDSTRINGEXACT,
+                                        -1,reinterpret_cast<LPARAM>(name.c_str())));
+        if(i>=0)SendMessageW(profile_combo,CB_SETCURSEL,i,0);
+        message(L"Profilo salvato: "+name);
+    } catch(...) {message(L"Impossibile salvare il profilo.");}
+}
 bool running() {
     if(!process.hProcess) return false;
     return WaitForSingleObject(process.hProcess,0)==WAIT_TIMEOUT;
