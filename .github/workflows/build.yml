@@ -27,6 +27,7 @@ jobs:
           name: A50-VoiceClean-Experimental-Live-RNNoise
           path: |
             build/Release/A50VoiceClean-Live.exe
+            build/Release/A50VoiceClean-Control.exe
             third_party_licenses/RNNOISE_COPYING.txt
           if-no-files-found: error
       - name: Upload standalone microphone diagnostics (not a release)

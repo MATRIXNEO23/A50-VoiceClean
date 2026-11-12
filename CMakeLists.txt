@@ -29,6 +29,13 @@ if(WIN32)
     add_subdirectory("${rnnoise_vendor_SOURCE_DIR}/src" "${rnnoise_vendor_BINARY_DIR}/src" EXCLUDE_FROM_ALL)
   endif()
 
+  add_executable(A50VoiceClean-Control WIN32 src/live_gui_win.cpp)
+  target_link_libraries(A50VoiceClean-Control PRIVATE comctl32 ole32 uuid)
+  target_compile_definitions(A50VoiceClean-Control PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+  if(MSVC)
+    target_compile_options(A50VoiceClean-Control PRIVATE /W4 /EHsc)
+  endif()
+
   add_executable(A50VoiceClean-GUI WIN32 src/gui_win.cpp src/wav.cpp)
   target_link_libraries(A50VoiceClean-GUI PRIVATE a50_dsp comctl32 comdlg32 winmm)
   target_compile_definitions(A50VoiceClean-GUI PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
