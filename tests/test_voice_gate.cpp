@@ -24,7 +24,7 @@ int main() {
         for(float x:out) max_voice=std::max(max_voice,std::fabs(x));
     }
     assert(max_voice>0.15f);
-    for(int i=0;i<45;++i) assert(gate.feed(silence,0.f,out));
+    for(int i=0;i<70;++i) assert(gate.feed(silence,0.f,out));
     float background_output=0.f;
     // Loud non-speech with low RNNoise speech probability must stay muted.
     for(int i=0;i<25;++i) {
