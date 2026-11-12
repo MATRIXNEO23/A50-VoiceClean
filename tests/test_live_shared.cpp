@@ -22,5 +22,11 @@ int main() {
            snapshot.gain_tenths==-30 &&
            snapshot.voice_enabled==1 &&
            snapshot.mix_milli==250);
+    InterlockedExchange(&shared.meter_input_db,318);
+    InterlockedExchange(&shared.meter_output_db,185);
+    InterlockedExchange(&shared.voice_probability_milli,817);
+    assert(a50::read_atomic(&shared.meter_input_db)==318);
+    assert(a50::read_atomic(&shared.meter_output_db)==185);
+    assert(a50::read_atomic(&shared.voice_probability_milli)==817);
     std::cout<<"Live shared settings protocol passed\n";
 }

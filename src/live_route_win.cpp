@@ -179,6 +179,12 @@ int find_virtual_output(const std::vector<Endpoint>& eps) {
 }
 using a50::Queue;
 using a50::Resampler;
+LONG meter_units(float level) {
+    if(!std::isfinite(level)||level<=0.00001f) return 0;
+    const float db=20.f*std::log10(std::clamp(level,0.00001f,1.f));
+    return static_cast<LONG>(std::lround(
+        std::clamp((db+70.f)/70.f,0.f,1.f)*1000.f));
+}
 void help() {
     std::wcout <<
       L"A50 VoiceClean — WASAPI live routing diagnostic (step 2)\n"
@@ -244,6 +250,7 @@ void route(IMMDevice* microphone, IMMDevice* destination,
     const auto start=std::chrono::steady_clock::now();
     auto last=start;
     std::uint64_t captured=0;
+    float input_meter=0.f, output_meter=0.f;
     LONG last_settings_generation=-1;
     check(input->Start(),"Start input");
     try {
@@ -274,6 +281,7 @@ void route(IMMDevice* microphone, IMMDevice* destination,
                             std::clamp(vals.min_voice_db_tenths/10.f,-90.f,0.f));
                     }
                 }
+                float input_peak=0.f,output_peak=0.f;
                 UINT32 available=0;
                 check(capture->GetNextPacketSize(&available),"GetNextPacketSize");
                 while(available) {
@@ -292,6 +300,7 @@ void route(IMMDevice* microphone, IMMDevice* destination,
                             mono/=in.channels;
                         }
                         block[i]=mono;
+                        input_peak=std::max(input_peak,std::fabs(mono));
                     }
                     check(capture->ReleaseBuffer(frames),"Capture ReleaseBuffer");
                     dsp.process(block.data(),block.size());
@@ -334,11 +343,21 @@ void route(IMMDevice* microphone, IMMDevice* destination,
                     if(!active && queue.size()>=prebuffer) active=true;
                     for(UINT32 i=0;i<to_write;++i) {
                         const float v=active?queue.pop():0.f;
+                        output_peak=std::max(output_peak,std::fabs(v));
                         BYTE* frame=data+static_cast<std::size_t>(i)*out.block;
                         for(unsigned c=0;c<out.channels;++c)
                             encode(frame+c*out.bytes,out.kind,v);
                     }
                     check(render->ReleaseBuffer(to_write,0),"Render ReleaseBuffer");
+                }
+                if(live_config) {
+                    input_meter=std::max(input_peak,input_meter*0.96f);
+                    output_meter=std::max(output_peak,output_meter*0.96f);
+                    InterlockedExchange(&live_config->meter_input_db,meter_units(input_meter));
+                    InterlockedExchange(&live_config->meter_output_db,meter_units(output_meter));
+                    const float p=denoiser?denoiser->last_voice_probability():0.f;
+                    InterlockedExchange(&live_config->voice_probability_milli,
+                                        static_cast<LONG>(std::lround(p*1000.f)));
                 }
                 const auto now=std::chrono::steady_clock::now();
                 if(now-last>=std::chrono::seconds(3)) {
