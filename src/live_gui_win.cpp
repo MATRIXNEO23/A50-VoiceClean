@@ -485,7 +485,21 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         control(L"BUTTON",L"Salva",BS_PUSHBUTTON,843,483,105,29,SaveProfile);
         try{refresh_profiles();}catch(...){message(L"Errore lettura profili.");}
         control(L"STATIC",L"Cursori regolabili in diretta. RNNoise/VAD richiedono riavvio. Velocita live invariata.",0,20,528,955,22);
-        status_text=control(L"STATIC",L"Caricamento dispositivi...",0,20,557,955,35);
+        status_text=control(L"STATIC",L"Caricamento dispositivi...",0,20,556,955,34);
+        control(L"STATIC",L"ASCOLTO DELLA VOCE MODIFICATA (ASTRO A50)",0,20,599,810,21);
+        monitor_check=control(L"BUTTON",L"Ascolta la mia voce",BS_AUTOCHECKBOX,
+                              20,628,225,25,MonitorCheck);
+        control(L"STATIC",L"Uscita cuffie",0,257,634,100,18);
+        monitor_combo=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,
+                              360,627,565,200,MonitorSelect);
+        control(L"STATIC",L"Volume ascolto",0,20,671,145,18);
+        monitor_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,
+                               168,662,310,34,MonitorSlider);
+        monitor_value=control(L"STATIC",L"35 %",0,487,669,80,19);
+        control(L"STATIC",L"Parti a volume basso. Disattiva l'eventuale sidetone Astro per sentire solo il filtro.",
+                0,20,704,950,20);
+        set_slider(monitor_slider,0,100,35);
+        values();
         try {populate();} catch(...) {message(L"Impossibile leggere i dispositivi audio.");}
         SetTimer(h,1,100,nullptr);
         return 0;
@@ -497,6 +511,18 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         case Start: start_engine();return 0;
         case Stop: stop_engine();return 0;
         case VoiceCheck: publish_live_settings();return 0;
+        case MonitorCheck:
+            if(SendMessageW(monitor_check,BM_GETCHECK,0,0)==BST_CHECKED &&
+               SendMessageW(monitor_combo,CB_GETCURSEL,0,0)==CB_ERR) {
+                SendMessageW(monitor_check,BM_SETCHECK,BST_UNCHECKED,0);
+                message(L"Per ascoltare serve ASTRO A50 Game collegata.");
+            } else if(running()) {
+                message(L"Ascolto cuffie attivato/disattivato in diretta.");
+            }
+            publish_live_settings();return 0;
+        case MonitorSelect:
+            if(running()) message(L"Ferma il flusso per cambiare l'uscita cuffie.");
+            return 0;
         case LoadProfile: load_selected_profile();return 0;
         case SaveProfile: save_current_profile();return 0;
         case DenoiseCheck: case VadCheck:
@@ -542,7 +568,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show) {
     RegisterClassExW(&wc);
     HWND h=CreateWindowExW(0,wc.lpszClassName,L"A50 VoiceClean - Live",
         WS_OVERLAPPEDWINDOW&~WS_THICKFRAME,
-        CW_USEDEFAULT,CW_USEDEFAULT,1035,651,
+        CW_USEDEFAULT,CW_USEDEFAULT,1035,794,
         nullptr,nullptr,instance,nullptr);
     if(!h) {CoUninitialize();return 1;}
     ShowWindow(h,show);UpdateWindow(h);
