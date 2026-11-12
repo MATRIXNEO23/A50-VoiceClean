@@ -39,7 +39,7 @@ HFONT font=nullptr;
 PROCESS_INFORMATION process{};
 HANDLE stop_event=nullptr,job=nullptr,config_mapping=nullptr;
 a50::LiveShared* shared_config=nullptr;
-std::vector<std::wstring> inputs,outputs;
+std::vector<std::wstring> inputs,outputs,input_ids,output_ids;
 
 void check(HRESULT hr,const char* op) {
     if(FAILED(hr)) throw std::runtime_error(op);
@@ -61,7 +61,8 @@ HWND control(const wchar_t* cls,const wchar_t* caption,DWORD style,
     if(handle) SendMessageW(handle,WM_SETFONT,reinterpret_cast<WPARAM>(font),TRUE);
     return handle;
 }
-std::vector<std::wstring> endpoint_names(IMMDeviceEnumerator* en,EDataFlow flow) {
+std::vector<std::wstring> endpoint_names(IMMDeviceEnumerator* en,EDataFlow flow,
+                                         std::vector<std::wstring>& ids) {
     ComPtr<IMMDeviceCollection> coll;
     check(en->EnumAudioEndpoints(flow,DEVICE_STATE_ACTIVE,&coll),"Enumerazione dispositivi");
     UINT count=0;
@@ -77,6 +78,10 @@ std::vector<std::wstring> endpoint_names(IMMDeviceEnumerator* en,EDataFlow flow)
         check(store->GetValue(PKEY_Device_FriendlyName,&v),"Nome dispositivo");
         const std::wstring name=(v.vt==VT_LPWSTR && v.pwszVal)?v.pwszVal:L"(senza nome)";
         PropVariantClear(&v);
+        LPWSTR endpoint_id=nullptr;
+        check(device->GetId(&endpoint_id),"ID dispositivo");
+        ids.emplace_back(endpoint_id?endpoint_id:L"");
+        CoTaskMemFree(endpoint_id);
         result.push_back(name);
     }
     return result;
@@ -85,8 +90,9 @@ void populate() {
     ComPtr<IMMDeviceEnumerator> enumerator;
     check(CoCreateInstance(__uuidof(MMDeviceEnumerator),nullptr,CLSCTX_ALL,
           IID_PPV_ARGS(&enumerator)),"COM endpoint");
-    inputs=endpoint_names(enumerator.Get(),eCapture);
-    outputs=endpoint_names(enumerator.Get(),eRender);
+    input_ids.clear(); output_ids.clear();
+    inputs=endpoint_names(enumerator.Get(),eCapture,input_ids);
+    outputs=endpoint_names(enumerator.Get(),eRender,output_ids);
     SendMessageW(in_combo,CB_RESETCONTENT,0,0);
     SendMessageW(out_combo,CB_RESETCONTENT,0,0);
     int preferred_input=-1,preferred_output=-1;
@@ -314,8 +320,13 @@ void start_engine() {
             CloseHandle(logfile);CloseHandle(nul);throw std::runtime_error("Errore mappatura");
         }
         publish_live_settings();
-        std::wstring args=L"\""+executable.wstring()+L"\" --input "+
-            std::to_wstring(input)+L" --output "+std::to_wstring(output)+
+        if(static_cast<std::size_t>(input)>=input_ids.size() ||
+           static_cast<std::size_t>(output)>=output_ids.size())
+            throw std::runtime_error("Elenco periferiche non aggiornato");
+        const auto& stable_input=input_ids[input];
+        const auto& stable_output=output_ids[output];
+        std::wstring args=L"\""+executable.wstring()+L"\" --input-id \""+
+            stable_input+L"\" --output-id \""+stable_output+L"\""+
             L" --gain-db "+std::to_wstring(slider(gain_slider))+
             L" --vad-prob "+std::to_wstring(slider(probability_slider)/100.0)+
             L" --voice-min-db "+std::to_wstring(slider(floor_slider))+
