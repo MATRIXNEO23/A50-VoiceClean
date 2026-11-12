@@ -1,4 +1,4 @@
-name: Build and test Windows voice editor
+name: Build and test A50 VoiceClean
 on:
   push:
   pull_request:
@@ -16,7 +16,7 @@ jobs:
       - name: Upload editor and CLI executables
         uses: actions/upload-artifact@v4
         with:
-          name: A50-VoiceClean-v0.2-Windows-x64
+          name: A50-VoiceClean-WASAPI-dev-Windows-x64
           path: |
             build/Release/A50VoiceClean-GUI.exe
             build/Release/a50voiceclean.exe
