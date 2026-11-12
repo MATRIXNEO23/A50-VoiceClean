@@ -489,16 +489,17 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         control(L"STATIC",L"ASCOLTO DELLA VOCE MODIFICATA (ASTRO A50)",0,20,599,810,21);
         monitor_check=control(L"BUTTON",L"Ascolta la mia voce",BS_AUTOCHECKBOX,
                               20,628,225,25,MonitorCheck);
+        SendMessageW(monitor_check,BM_SETCHECK,BST_CHECKED,0);
         control(L"STATIC",L"Uscita cuffie",0,257,634,100,18);
         monitor_combo=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,
                               360,627,565,200,MonitorSelect);
         control(L"STATIC",L"Volume ascolto",0,20,671,145,18);
         monitor_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,
                                168,662,310,34,MonitorSlider);
-        monitor_value=control(L"STATIC",L"35 %",0,487,669,80,19);
+        monitor_value=control(L"STATIC",L"20 %",0,487,669,80,19);
         control(L"STATIC",L"Parti a volume basso. Disattiva l'eventuale sidetone Astro per sentire solo il filtro.",
                 0,20,704,950,20);
-        set_slider(monitor_slider,0,100,35);
+        set_slider(monitor_slider,0,100,20);
         values();
         try {populate();} catch(...) {message(L"Impossibile leggere i dispositivi audio.");}
         SetTimer(h,1,100,nullptr);
