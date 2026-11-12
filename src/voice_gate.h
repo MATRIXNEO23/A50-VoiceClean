@@ -47,6 +47,13 @@ public:
            options.fade_in_ms<0.5f || options.fade_out_ms<0.5f)
             throw std::invalid_argument("VoiceGate parameters outside supported range");
     }
+    void set_sensitivity(float probability,float minimum_db) {
+        if(!std::isfinite(probability)||probability<0.f||probability>1.f||
+           !std::isfinite(minimum_db)||minimum_db<-95.f||minimum_db>0.f)
+            throw std::invalid_argument("VoiceGate sensitivity out of range");
+        opt_.probability_threshold=probability;
+        opt_.minimum_voice_db=minimum_db;
+    }
     // Push a 10 ms denoised frame. Returns true when a delayed output frame
     // becomes available, preserving a constant sample rate after startup.
     bool feed(const std::array<float,480>& frame, float speech_probability,
