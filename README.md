@@ -1,56 +1,46 @@
 # A50 VoiceClean
 
-Software sperimentale **C++17** per le **Astro A50 Gen 4** su Windows 10. Non affiliato a Logitech/ASTRO.
+Software C++17 sperimentale per il microfono **Astro A50 Gen 4** su Windows 10 x64, indipendente da Logitech/ASTRO.
 
-## Stato reale — v0.2 (editor WAV, non microfono live)
+## Stato reale (12 novembre 2026)
 
-Questa versione include interfaccia grafica Win32 e strumento CLI. Elabora **file WAV mono PCM16**. Non acquisisce ancora l'audio direttamente dalle cuffie, non crea un microfono virtuale e non cambia ancora la voce in tempo reale in Jarvis o Discord.
+Il codice comprende due prodotti distinti:
 
-### Funzioni implementate
+1. **Editor WAV v0.2**: `A50VoiceClean-GUI.exe`, modifica registrazioni WAV offline. Funziona indipendentemente dalle Astro. Include pitch/timbro/bassi/brillantezza/mix, velocità WAV, preview e preset. La v0.2 è un editor, **non un filtro microfono Windows**.
+2. **Pipeline live sperimentale**: `A50VoiceClean-Control.exe` (pannello) + `A50VoiceClean-Live.exe` (motore), che acquisisce il microfono reale tramite WASAPI e invia l'audio elaborato a un'uscita audio virtuale come VB-CABLE. Il codice **compila su Windows e supera i test automatici**, ma **non è ancora stato collaudato sulle vere Astro A50 Gen 4**.
 
-- Guadagno e soglia noise gate, passa-alto a 80 Hz.
-- Modificatore opzionale senza AI: tonalita (-12/+12 semitoni), timbro/risonanza, bassi, brillantezza e intensita/mix.
-- Velocita dei WAV 70–130%, con compensazione approssimativa della tonalita (**solo offline**).
-- Anteprima dei primi 10 secondi, esportazione WAV modificato.
-- Profili originali, chiaro, acuto e personalizzati salvati in AppData (A50VoiceClean/profiles.ini).
+### Funzionalità implementate nel codice live
 
-Il timbro cambia l'equalizzazione, **non** corregge i formanti come un modello AI. Il pitch shifter puo produrre artefatti. Una voce femminile naturale non e garantita. Il noise gate non distingue una parola da un rumore forte: **RNNoise e VAD restano da implementare**.
+- Input WASAPI, scelta del dispositivo tramite **ID stabile**, aggiornamento elenco e fallimento sicuro se scollegato.
+- Uscita WASAPI verso VB-CABLE, con controllo anti-feedback per evitare altoparlanti fisici.
+- RNNoise a 48 kHz, conversione automatica dal microfono mono 16 kHz alla frequenza di uscita.
+- VAD basato su probabilità RNNoise e soglia RMS: preroll, tenuta, fade, sensibilità modificabile.
+- Guadagno, filtro passa alto, tono/pitch, timbro, bassi, brillantezza, mix; la trasformazione femminile è un **DSP sperimentale**, non un modello di clonazione vocale.
+- Regolazioni di volume, sensibilità e timbro **durante** il flusso via memoria condivisa Windows.
+- Preset Originale, Voce chiara, Voce femminile leggera e profili personalizzati in `%APPDATA%\A50VoiceClean\live_profiles.ini`.
+- Meter dei livelli audio **prima e dopo** il filtro e probabilità di parlato, con aggiornamento 10 volte al secondo.
+- Avvia/Ferma, spegnimento tramite evento Windows, arresto di sicurezza, log in `%LOCALAPPDATA%\A50VoiceClean\live.log`.
 
-## Lavori in corso — passo 1: input WASAPI reale (non ancora validato su hardware)
-Il sorgente `src/live_capture_win.cpp` aggiunge una utility di **diagnostica** Windows per enumerare i microfoni, individuare ASTRO A50 Voice e registrare direttamente 10 secondi su WAV con indicatore di livello in dBFS. Nella build viene chiamata `A50VoiceClean-MicTest.exe`.
+### Cosa NON è ancora confermato
 
-La compilazione Windows è affidata a GitHub Actions; prima di dichiarare completato il passo sono indispensabili la verifica del workflow e un test sulle vere cuffie Astro A50 Gen 4. Questa utility non è una release per l'uso quotidiano e non sostituisce l'applicazione live finale. La checklist e le istruzioni sono in [docs/STEP_01_WASAPI.md](docs/STEP_01_WASAPI.md).
-
-## Sviluppo successivo alla v0.2 (ancora NON una release)
-
-Il repository include anche i moduli Windows `A50VoiceClean-MicTest.exe` e `A50VoiceClean-Live.exe`, costruiti e testati in GitHub Actions. La pipeline sperimentale comprende input WASAPI, routing verso VB-CABLE e RNNoise a 48 kHz. Il modulo live è documentato in [passo 2](docs/STEP_02_LIVE_ROUTE.md) e [passo 3](docs/STEP_03_RNNOISE.md).
-
-**Attenzione:** non abbiamo ancora verificato la pipeline sul vero hardware Astro A50 Gen 4, la latenza e il consumo CPU sul PC i3-2100. L'uscita live non dispone ancora di interfaccia grafica, vero VAD e modificatore vocale live. Rimane quindi una diagnostica di sviluppo, non il programma completo da installare. La v0.2 WAV resta l'ultima versione utilizzabile indipendentemente.
+- **Non** è stata verificata la qualità audio sul microfono A50 reale, né il riconoscimento delle consonanti in Jarvis.
+- **Non** sono stati misurati CPU, RAM e latenza sul processore i3-2100: le vecchie stime di peso sono obiettivi, **non dati certificati**.
+- La pipeline non crea un driver virtuale proprio: per usarla come microfono di Jarvis/Discord è necessaria un'uscita virtuale esterna (es. **VB-CABLE**). L'applicazione invia a **CABLE Input**; in Jarvis si sceglie **CABLE Output** come microfono.
+- La voce femminile DSP può produrre artefatti e non offre correzione indipendente dei formanti; non garantisce una voce naturale.
+- La **velocità del parlato in diretta non è regolabile**: una modifica continua del tempo senza tecnica adeguata accumulerebbe ritardo. Nell'editor WAV è regolabile.
+- Cambiare la presenza stessa di RNNoise/VAD richiede Ferma e Avvia. I cursori volume/sensibilità/voce si aggiornano live.
+- **Non è ancora una release completa** da consegnare come prodotto finito.
 
 ## Hardware di riferimento
 
-- Astro A50 Gen 4, firmware cuffie 39964.43, firmware base 40372.43
-- Driver Microsoft 10.0.19041.1, PCM16 mono 16.000 Hz
-- PC target: i3-2100 (senza AVX2), 10 GB RAM, Windows 10 x64
-- Non e richiesta alcuna modifica ai driver o al firmware.
+- Astro A50 Gen 4: firmware cuffie `39964.43`, firmware base `40372.43`.
+- Driver microfono Microsoft `10.0.19041.1`, PCM mono 16 bit a 16.000 Hz (configurazione rilevata).
+- PC target: Intel Core i3-2100 (senza AVX2), 10 GB RAM, Windows 10 64 bit.
+- Nessuna modifica ai driver ASTRO o al firmware.
 
-## Download del prototipo
+## Compilazione e test automatici
 
-Apri la pagina [GitHub Actions](https://github.com/MATRIXNEO23/A50-VoiceClean/actions/workflows/build.yml), scegli un'esecuzione **verde** del workflow Build and test Windows voice editor e scarica l'artifact **A50-VoiceClean-v0.2-Windows-x64**.
-
-Estrai lo ZIP e apri **A50VoiceClean-GUI.exe**. Non e un installer. Se non esiste ancora una build verde, gli eseguibili Windows non sono verificati.
-
-Per provarlo:
-1. Crea una registrazione di prova WAV mono PCM16 (consigliati 16 kHz).
-2. Apri il WAV con il programma, spunta Modifica voce e seleziona uno dei preset.
-3. Personalizza i cursori tonalita, timbro, bassi, brillantezza, intensita e velocita.
-4. Premi Ascolta 10 s oppure Salva WAV. Per conservare i valori usa Salva profilo.
-
-Attenzione: abbassa il volume delle cuffie prima delle prove.
-
-## Build locale
-
-Con Visual Studio C++ e CMake su Windows:
+Con Visual Studio C++ e CMake:
 
 ~~~powershell
 cmake -S . -B build -A x64
@@ -58,23 +48,24 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ~~~
 
-Output atteso: build/Release/A50VoiceClean-GUI.exe e build/Release/a50voiceclean.exe.
+La build live scarica **durante la compilazione** un sorgente RNNoise Windows a commit fissato; l'applicazione risultante funziona **senza Internet**. La relativa licenza è in `third_party_licenses/RNNOISE_COPYING.txt`.
 
-Esempio CLI:
+Il workflow [GitHub Actions](https://github.com/MATRIXNEO23/A50-VoiceClean/actions/workflows/build.yml) produce artifact distinti:
+- `A50-VoiceClean-v0.2-Windows-x64`: editor WAV tradizionale;
+- `A50-VoiceClean-Experimental-Live-RNNoise`: `A50VoiceClean-Control.exe`, `A50VoiceClean-Live.exe`, file di licenza (solo test di sviluppo);
+- `A50-VoiceClean-WASAPI-Step1-Diagnostic`: diagnostica del microfono.
 
-~~~powershell
-.\build\Release\a50voiceclean.exe input.wav output.wav --voice --pitch 5 --resonance 0.4 --bass-db -3 --brightness-db 2 --mix 1 --speed 1
-~~~
+Non distribuire il secondo artifact come **release finale** fino al collaudo hardware.
 
-Supporta anche --gain-db, --threshold-db, --no-gate e --no-highpass. DSP compilabile e testabile anche su Linux; GUI solo su Windows.
+## Piano di validazione reale
 
-## Roadmap — non ancora implementata
+1. Connettere Astro A50 Gen 4 e verificare che appaiano nel pannello come **ASTRO A50 Voice**.
+2. Installare/selezionare un driver audio virtuale (VB-CABLE) e controllare l'assenza di feedback.
+3. Parlare, bisbigliare, produrre rumori ambientali; confrontare meter Input/Filtrato e ascoltare il risultato.
+4. In Jarvis selezionare **CABLE Output** come microfono e provare dettatura/consonanti S/F.
+5. Regolare guadagno, soglie VAD e modificatore vocale; salvare/ricaricare i profili.
+6. Misurare CPU, RAM, latenza e glitch sul PC i3-2100; correggere eventuali regressioni.
 
-1. Acquisizione live WASAPI da ASTRO A50 Voice, selezione input e meter audio.
-2. Riduzione del rumore con RNNoise e conversione 16↔48 kHz.
-3. Rilevamento vocale VAD, preroll, soglia/sensibilita, rilascio.
-4. Uscita a microfono virtuale selezionabile per Jarvis, Discord e Windows (es. VB-CABLE, esterno).
-5. Modificatore vocale live con regolazioni e profili. La velocita live necessita un progetto dedicato per evitare ritardi crescenti.
-6. Prova reale su i3-2100: CPU, RAM, latenza, artefatti e qualita della voce.
+Per il dettaglio e le checklist: [docs/STEP_01_WASAPI.md](docs/STEP_01_WASAPI.md) fino a [docs/STEP_10_DEVICE_ID.md](docs/STEP_10_DEVICE_ID.md).
 
-I consumi discussi sono obiettivi indicativi, non misurazioni.
+La v0.2 WAV resta un componente distinto e non deve essere confusa con il filtro live sperimentale.
