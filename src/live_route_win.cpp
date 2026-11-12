@@ -3,6 +3,7 @@
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include "dsp.h"
+#include "live_buffer.h"
 #include <windows.h>
 #include <audioclient.h>
 #include <mmdeviceapi.h>
@@ -170,46 +171,8 @@ int find_virtual_output(const std::vector<Endpoint>& eps) {
         if(is_virtual_cable(eps[i].name)) return static_cast<int>(i);
     return -1;
 }
-struct Queue {
-    std::vector<float> buf;
-    std::size_t head=0, length=0;
-    std::uint64_t lost=0, underflow=0;
-    explicit Queue(std::size_t size) : buf(size,0.f) {}
-    void push(float x) {
-        if(length==buf.size()) {head=(head+1)%buf.size();--length;++lost;}
-        buf[(head+length)%buf.size()]=x;
-        ++length;
-    }
-    float pop() {
-        if(!length) {++underflow; return 0.f;}
-        float v=buf[head];head=(head+1)%buf.size();--length;return v;
-    }
-    // Do not let scheduling drift turn into multi-second latency.
-    void trim_to(std::size_t max_frames) {
-        if(length<=max_frames) return;
-        const auto drop=length-max_frames;
-        head=(head+drop)%buf.size();
-        length=max_frames;
-        lost+=drop;
-    }
-    std::size_t size() const {return length;}
-};
-struct Resampler {
-    double phase=0.0, ratio=1.0;
-    float prev=0.f;
-    bool has_prev=false;
-    Resampler(unsigned in_rate,unsigned out_rate):
-        ratio(static_cast<double>(in_rate)/out_rate) {}
-    void feed(float x,Queue& output) {
-        if(!has_prev) {prev=x;has_prev=true;return;}
-        while(phase < 1.0) {
-            output.push(prev + static_cast<float>(phase)*(x-prev));
-            phase += ratio;
-        }
-        phase -= 1.0;
-        prev=x;
-    }
-};
+using a50::Queue;
+using a50::Resampler;
 void help() {
     std::wcout <<
       L"A50 VoiceClean — WASAPI live routing diagnostic (step 2)\n"
