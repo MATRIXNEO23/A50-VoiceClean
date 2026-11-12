@@ -1,4 +1,7 @@
 #include "live_buffer.h"
+#ifdef NDEBUG
+#undef NDEBUG // Keep assertions enabled during Release CI runs.
+#endif
 #include <cassert>
 #include <cmath>
 #include <iostream>
