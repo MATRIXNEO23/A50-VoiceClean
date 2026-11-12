@@ -21,6 +21,12 @@ jobs:
             build/Release/A50VoiceClean-GUI.exe
             build/Release/a50voiceclean.exe
           if-no-files-found: error
+      - name: Upload standalone live router diagnostic (not a release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: A50-VoiceClean-WASAPI-Step2-Live-Diagnostic
+          path: build/Release/A50VoiceClean-Live.exe
+          if-no-files-found: error
       - name: Upload standalone microphone diagnostics (not a release)
         uses: actions/upload-artifact@v4
         with:
