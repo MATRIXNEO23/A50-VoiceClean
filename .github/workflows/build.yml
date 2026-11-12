@@ -24,8 +24,10 @@ jobs:
       - name: Upload standalone live router diagnostic (not a release)
         uses: actions/upload-artifact@v4
         with:
-          name: A50-VoiceClean-WASAPI-Step2-Live-Diagnostic
-          path: build/Release/A50VoiceClean-Live.exe
+          name: A50-VoiceClean-Experimental-Live-RNNoise
+          path: |
+            build/Release/A50VoiceClean-Live.exe
+            third_party_licenses/RNNOISE_COPYING.txt
           if-no-files-found: error
       - name: Upload standalone microphone diagnostics (not a release)
         uses: actions/upload-artifact@v4
