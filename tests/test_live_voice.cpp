@@ -2,6 +2,7 @@
 #undef NDEBUG
 #endif
 #include <cassert>
+#include <algorithm>
 #include "dsp.h"
 #include <cmath>
 #include <iostream>
