@@ -2,9 +2,11 @@
 
 Software sperimentale **C++17** per le **Astro A50 Gen 4** su Windows 10. Non affiliato a Logitech/ASTRO.
 
-## Stato reale — v0.2 (editor WAV, non microfono live)
+## Stato reale — ramo principale v0.2, sviluppo acquisizione WASAPI
 
-Questa versione include interfaccia grafica Win32 e strumento CLI. Elabora **file WAV mono PCM16**. Non acquisisce ancora l'audio direttamente dalle cuffie, non crea un microfono virtuale e non cambia ancora la voce in tempo reale in Jarvis o Discord.
+La v0.2 del ramo principale resta un editor WAV. Nel ramo di lavoro **feature/wasapi-microphone-capture-20261112** è presente il primo passo verso l'uso live: selezione ingresso da Windows, acquisizione WASAPI condivisa, livello audio in GUI e comandi Avvia/Ferma. Il flusso è acquisito in memoria e *non* è ancora filtrato, riprodotto o esposto come microfono virtuale. L'acquisizione non modifica driver o volume di sistema. Il corretto funzionamento sulla Astro A50 reale deve ancora essere verificato sul PC target.
+
+L'editor WAV, la CLI e i profili restano disponibili. I moduli live successivi (RNNoise, VAD, uscita virtuale, cambio voce live) **non sono finiti**.
 
 ### Funzioni implementate
 
@@ -25,7 +27,7 @@ Il timbro cambia l'equalizzazione, **non** corregge i formanti come un modello A
 
 ## Download del prototipo
 
-Apri la pagina [GitHub Actions](https://github.com/MATRIXNEO23/A50-VoiceClean/actions/workflows/build.yml), scegli un'esecuzione **verde** del workflow Build and test Windows voice editor e scarica l'artifact **A50-VoiceClean-v0.2-Windows-x64**.
+Apri la pagina [GitHub Actions](https://github.com/MATRIXNEO23/A50-VoiceClean/actions/workflows/build.yml). La build stabile v0.2 del ramo principale resta **A50-VoiceClean-v0.2-Windows-x64**. Gli artifact del ramo WASAPI, se prodotti, sono compilazioni di sviluppo per test e non una release completa.
 
 Estrai lo ZIP e apri **A50VoiceClean-GUI.exe**. Non e un installer. Se non esiste ancora una build verde, gli eseguibili Windows non sono verificati.
 
@@ -59,7 +61,7 @@ Supporta anche --gain-db, --threshold-db, --no-gate e --no-highpass. DSP compila
 
 ## Roadmap — non ancora implementata
 
-1. Acquisizione live WASAPI da ASTRO A50 Voice, selezione input e meter audio.
+1. Acquisizione live WASAPI, selezione input e meter audio: **codice aggiunto sul ramo di sviluppo; prova hardware ancora necessaria**.
 2. Riduzione del rumore con RNNoise e conversione 16↔48 kHz.
 3. Rilevamento vocale VAD, preroll, soglia/sensibilita, rilascio.
 4. Uscita a microfono virtuale selezionabile per Jarvis, Discord e Windows (es. VB-CABLE, esterno).
