@@ -4,11 +4,13 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "live_shared.h"
+#include "live_profiles_win.h"
 #include <commctrl.h>
 #include <mmdeviceapi.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <wrl/client.h>
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -21,7 +23,8 @@ enum : int {InputSelect=101,OutputSelect=102,Refresh=103,Start=104,Stop=105,
              GainSlider=201,ProbabilitySlider=202,FloorSlider=203,
              DenoiseCheck=301,VadCheck=302,VoiceCheck=303,
              PitchSlider=204,ResonanceSlider=205,BassSlider=206,
-             BrightnessSlider=207,MixSlider=208};
+             BrightnessSlider=207,MixSlider=208,
+             ProfileCombo=401,ProfileName=402,LoadProfile=403,SaveProfile=404};
 HWND window=nullptr,in_combo=nullptr,out_combo=nullptr,gain_slider=nullptr,
      probability_slider=nullptr,floor_slider=nullptr,denoise_check=nullptr,
      vad_check=nullptr,status_text=nullptr,gain_value=nullptr,
@@ -30,6 +33,7 @@ HWND voice_check=nullptr,pitch_slider=nullptr,resonance_slider=nullptr,
      bass_slider=nullptr,brightness_slider=nullptr,mix_slider=nullptr;
 HWND pitch_value=nullptr,resonance_value=nullptr,bass_value=nullptr,
      brightness_value=nullptr,mix_value=nullptr;
+HWND profile_combo=nullptr,profile_name=nullptr;
 HFONT font=nullptr;
 PROCESS_INFORMATION process{};
 HANDLE stop_event=nullptr,job=nullptr,config_mapping=nullptr;
@@ -135,6 +139,87 @@ void publish_live_settings() {
     v.brightness_tenths=slider(brightness_slider)*10;
     v.mix_milli=slider(mix_slider)*10;
     a50::publish(shared_config,v);
+}
+std::filesystem::path profile_path() {
+    wchar_t root[32768]{};
+    const DWORD n=GetEnvironmentVariableW(L"APPDATA",root,32768);
+    if(!n||n>=32768) throw std::runtime_error("APPDATA");
+    const auto folder=std::filesystem::path(root)/L"A50VoiceClean";
+    std::filesystem::create_directories(folder);
+    return folder/L"live_profiles.ini";
+}
+std::array<HWND,8> profile_sliders() {
+    return {gain_slider,probability_slider,floor_slider,pitch_slider,
+            resonance_slider,bass_slider,brightness_slider,mix_slider};
+}
+a50::StoredProfile current_profile() {
+    a50::StoredProfile p;
+    const auto sliders=profile_sliders();
+    for(std::size_t i=0;i<8;++i)p.sliders[i]=slider(sliders[i]);
+    p.denoise=SendMessageW(denoise_check,BM_GETCHECK,0,0)==BST_CHECKED;
+    p.vad=SendMessageW(vad_check,BM_GETCHECK,0,0)==BST_CHECKED;
+    p.voice=SendMessageW(voice_check,BM_GETCHECK,0,0)==BST_CHECKED;
+    return p;
+}
+void apply_profile(const a50::StoredProfile& p) {
+    const auto handles=profile_sliders();
+    constexpr std::array<int,8> low{-12,20,-80,-12,-100,-12,-12,0};
+    constexpr std::array<int,8> high{24,95,-20,12,100,12,12,100};
+    for(std::size_t i=0;i<8;++i)
+        SendMessageW(handles[i],TBM_SETPOS,TRUE,std::clamp(p.sliders[i],low[i],high[i]));
+    SendMessageW(denoise_check,BM_SETCHECK,p.denoise?BST_CHECKED:BST_UNCHECKED,0);
+    SendMessageW(vad_check,BM_SETCHECK,p.vad?BST_CHECKED:BST_UNCHECKED,0);
+    SendMessageW(voice_check,BM_SETCHECK,p.voice?BST_CHECKED:BST_UNCHECKED,0);
+    values();publish_live_settings();
+}
+void refresh_profiles() {
+    SendMessageW(profile_combo,CB_RESETCONTENT,0,0);
+    for(const wchar_t* p:{L"Originale",L"Voce chiara",L"Voce femminile leggera"})
+        SendMessageW(profile_combo,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(p));
+    for(const auto& p:a50::list_profiles(profile_path()))
+        SendMessageW(profile_combo,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(p.c_str()));
+    SendMessageW(profile_combo,CB_SETCURSEL,0,0);
+}
+void load_selected_profile() {
+    const int selected=static_cast<int>(SendMessageW(profile_combo,CB_GETCURSEL,0,0));
+    if(selected<0)return;
+    try {
+        a50::StoredProfile p;
+        if(selected<3) {
+            p.voice=selected!=0;
+            p.sliders={0,65,-46,selected==2?4:0,selected==2?35:(selected==1?20:0),
+                       selected==2?-3:(selected==1?-2:0),
+                       selected==2?2:(selected==1?4:0),selected==1?60:100};
+        } else {
+            wchar_t name[128]{};
+            SendMessageW(profile_combo,CB_GETLBTEXT,selected,reinterpret_cast<LPARAM>(name));
+            p=a50::load_profile_file(profile_path(),name);
+        }
+        apply_profile(p);
+        message(L"Profilo caricato. Le caselle RNNoise/VAD richiedono riavvio.");
+    } catch(...) {message(L"Impossibile leggere il profilo.");}
+}
+void save_current_profile() {
+    wchar_t text[128]{};
+    GetWindowTextW(profile_name,text,128);
+    const std::wstring name(text);
+    if(!a50::valid_profile_name(name)||name==L"Originale"||
+       name==L"Voce chiara"||name==L"Voce femminile leggera") {
+        MessageBoxW(window,L"Nome profilo non valido.",L"A50 VoiceClean",MB_OK|MB_ICONWARNING);
+        return;
+    }
+    try {
+        const auto path=profile_path();
+        if(a50::profile_exists(path,name) &&
+           MessageBoxW(window,L"Sovrascrivere il profilo esistente?",L"A50 VoiceClean",
+                       MB_YESNO|MB_ICONQUESTION)!=IDYES) return;
+        a50::save_profile_file(path,name,current_profile());
+        refresh_profiles();
+        const int i=static_cast<int>(SendMessageW(profile_combo,CB_FINDSTRINGEXACT,
+                                        -1,reinterpret_cast<LPARAM>(name.c_str())));
+        if(i>=0)SendMessageW(profile_combo,CB_SETCURSEL,i,0);
+        message(L"Profilo salvato: "+name);
+    } catch(...) {message(L"Impossibile salvare il profilo.");}
 }
 bool running() {
     if(!process.hProcess) return false;
@@ -325,6 +410,12 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         start_button=control(L"BUTTON",L"Avvia",BS_PUSHBUTTON,20,483,130,34,Start);
         stop_button=control(L"BUTTON",L"Ferma",BS_PUSHBUTTON,165,483,130,34,Stop);
         EnableWindow(stop_button,FALSE);
+        control(L"STATIC",L"Profilo",0,316,492,72,18);
+        profile_combo=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,390,483,182,220,ProfileCombo);
+        control(L"BUTTON",L"Carica",BS_PUSHBUTTON,580,483,74,29,LoadProfile);
+        profile_name=control(L"EDIT",L"Nome profilo",WS_BORDER|ES_AUTOHSCROLL,668,486,165,23,ProfileName);
+        control(L"BUTTON",L"Salva",BS_PUSHBUTTON,843,483,105,29,SaveProfile);
+        try{refresh_profiles();}catch(...){message(L"Errore lettura profili.");}
         control(L"STATIC",L"Cursori regolabili in diretta. RNNoise/VAD richiedono riavvio. Velocita live invariata.",0,20,528,955,22);
         status_text=control(L"STATIC",L"Caricamento dispositivi...",0,20,557,955,35);
         try {populate();} catch(...) {message(L"Impossibile leggere i dispositivi audio.");}
@@ -338,6 +429,8 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         case Start: start_engine();return 0;
         case Stop: stop_engine();return 0;
         case VoiceCheck: publish_live_settings();return 0;
+        case LoadProfile: load_selected_profile();return 0;
+        case SaveProfile: save_current_profile();return 0;
         case DenoiseCheck: case VadCheck:
             if(running()) message(L"Per cambiare RNNoise o VAD premi Ferma e poi Avvia.");
             return 0;
