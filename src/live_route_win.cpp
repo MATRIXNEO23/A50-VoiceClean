@@ -184,6 +184,67 @@ int find_virtual_output(const std::vector<Endpoint>& eps) {
 }
 using a50::Queue;
 using a50::Resampler;
+// Second WASAPI render sink. The virtual microphone keeps working independently.
+class HeadphoneMonitor {
+    ComPtr<IAudioClient> client_;
+    ComPtr<IAudioRenderClient> render_;
+    AudioFormat fmt_{AudioFormat::Kind::f32,48000,2,4,8};
+    UINT32 frames_=0;
+    std::unique_ptr<Queue> fifo_;
+    std::unique_ptr<Resampler> resampler_;
+    bool started_=false, primed_=false, enabled_=false;
+    float volume_=0.35f;
+public:
+    HeadphoneMonitor(IMMDevice* endpoint,unsigned source_rate) {
+        check(endpoint->Activate(__uuidof(IAudioClient),CLSCTX_ALL,nullptr,&client_),
+              "Activate headphone monitor");
+        MixFormat mix;
+        check(client_->GetMixFormat(&mix.ptr),"Headphone mix format");
+        fmt_=inspect(mix.ptr);
+        check(client_->Initialize(AUDCLNT_SHAREMODE_SHARED,0,500000,0,mix.ptr,nullptr),
+              "Initialize headphone monitor");
+        check(client_->GetService(__uuidof(IAudioRenderClient),&render_),
+              "Headphone render service");
+        check(client_->GetBufferSize(&frames_),"Headphone buffer size");
+        fifo_=std::make_unique<Queue>(static_cast<std::size_t>(fmt_.rate));
+        resampler_=std::make_unique<Resampler>(source_rate,fmt_.rate);
+    }
+    void start() {
+        check(client_->Start(),"Start headphone monitor");
+        started_=true;
+    }
+    ~HeadphoneMonitor() {
+        if(started_) client_->Stop();
+    }
+    void settings(bool enabled,float volume) {
+        enabled_=enabled;
+        volume_=std::clamp(volume,0.f,1.f);
+    }
+    void feed(float sample) {
+        resampler_->feed(sample,*fifo_);
+        fifo_->trim_to(static_cast<std::size_t>(fmt_.rate)*200/1000);
+    }
+    void pump() {
+        UINT32 padding=0;
+        check(client_->GetCurrentPadding(&padding),"Headphone padding");
+        const UINT32 free_frames=frames_-padding;
+        if(!free_frames)return;
+        BYTE* data=nullptr;
+        check(render_->GetBuffer(free_frames,&data),"Headphone GetBuffer");
+        if(!primed_ && fifo_->size()>=static_cast<std::size_t>(fmt_.rate)*40/1000)
+            primed_=true;
+        for(UINT32 i=0;i<free_frames;++i) {
+            // Pop even when muted: resuming the monitor must not replay stale audio.
+            const float sample=primed_?fifo_->pop():0.f;
+            const float output=enabled_ ? sample*volume_ : 0.f;
+            BYTE* frame=data+static_cast<std::size_t>(i)*fmt_.block;
+            for(unsigned ch=0;ch<fmt_.channels;++ch)
+                encode(frame+ch*fmt_.bytes,fmt_.kind,output);
+        }
+        check(render_->ReleaseBuffer(free_frames,0),"Headphone ReleaseBuffer");
+    }
+};
+
 LONG meter_units(float level) {
     if(!std::isfinite(level)||level<=0.00001f) return 0;
     const float db=20.f*std::log10(std::clamp(level,0.00001f,1.f));
