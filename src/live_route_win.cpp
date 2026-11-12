@@ -262,7 +262,9 @@ void help() {
       L"  [--vad-prob 0.65] [--voice-min-db -46] [--stop-event NAME]\n"
       L"  [--config-map NAME] (Windows native control panel)\n"
       L"  [--voice] [--pitch 4] [--resonance 0.35] [--bass-db -3]\n"
-      L"  [--brightness-db 2] [--voice-mix 1.0]\n\n"
+      L"  [--brightness-db 2] [--voice-mix 1.0]\n"
+      L"  [--monitor-id ID] [--monitor-on] [--monitor-volume 0.35]\n"
+      L"  [--headphone-preview] (headset only, without VB-CABLE)\n\n"
       L"Defaults: ASTRO A50 Voice input and VB-CABLE/CABLE Input output.\n"
       L"For safety the output must be a virtual cable unless --allow-speaker-output.\n"
       L"Run with --seconds 0 (default) to stop using Ctrl+C.\n"
@@ -272,7 +274,9 @@ void help() {
 void route(IMMDevice* microphone, IMMDevice* destination,
            a50::Settings settings, int duration, bool denoise_enabled,
            bool vad_enabled, a50::VoiceGate::Options vad_options,
-           a50::Settings voice_settings,a50::LiveShared* live_config) {
+           a50::Settings voice_settings,a50::LiveShared* live_config,
+           IMMDevice* monitor_device,bool preview_only,bool monitor_initially_on,
+           float initial_monitor_volume) {
     ComPtr<IAudioClient> input, output;
     check(microphone->Activate(__uuidof(IAudioClient),CLSCTX_ALL,nullptr,&input),
           "Activate input");
@@ -296,6 +300,11 @@ void route(IMMDevice* microphone, IMMDevice* destination,
     UINT32 out_buffer_frames=0;
     check(output->GetBufferSize(&out_buffer_frames),"GetBufferSize output");
     Queue queue(static_cast<std::size_t>(out.rate)*2);
+    std::unique_ptr<HeadphoneMonitor> headphones;
+    if(monitor_device) headphones=std::make_unique<HeadphoneMonitor>(monitor_device,out.rate);
+    bool monitor_enabled=monitor_initially_on;
+    float monitor_volume=std::clamp(initial_monitor_volume,0.f,1.f);
+    if(headphones) headphones->settings(monitor_enabled,monitor_volume);
     Resampler resampler(in.rate,out.rate); // bypass path
     Resampler to_48k(in.rate,48000);
     Resampler from_48k(48000,out.rate);
@@ -322,6 +331,7 @@ void route(IMMDevice* microphone, IMMDevice* destination,
     check(input->Start(),"Start input");
     try {
         check(output->Start(),"Start output");
+        if(headphones) headphones->start();
         try {
             while(!interrupted.load() &&
                   !(external_stop_event && WaitForSingleObject(external_stop_event,0)==WAIT_OBJECT_0) &&
@@ -346,6 +356,9 @@ void route(IMMDevice* microphone, IMMDevice* destination,
                         if(vad) vad->set_sensitivity(
                             std::clamp(vals.probability_milli/1000.f,0.f,1.f),
                             std::clamp(vals.min_voice_db_tenths/10.f,-90.f,0.f));
+                        monitor_enabled=vals.monitor_enabled!=0;
+                        monitor_volume=std::clamp(vals.monitor_volume_milli/1000.f,0.f,1.f);
+                        if(headphones) headphones->settings(monitor_enabled,monitor_volume);
                     }
                 }
                 float input_peak=0.f,output_peak=0.f;
@@ -411,12 +424,16 @@ void route(IMMDevice* microphone, IMMDevice* destination,
                     for(UINT32 i=0;i<to_write;++i) {
                         const float v=active?queue.pop():0.f;
                         output_peak=std::max(output_peak,std::fabs(v));
+                        if(headphones) headphones->feed(v);
+                        const float routed=preview_only
+                            ? (monitor_enabled?v*monitor_volume:0.f) : v;
                         BYTE* frame=data+static_cast<std::size_t>(i)*out.block;
                         for(unsigned c=0;c<out.channels;++c)
-                            encode(frame+c*out.bytes,out.kind,v);
+                            encode(frame+c*out.bytes,out.kind,routed);
                     }
                     check(render->ReleaseBuffer(to_write,0),"Render ReleaseBuffer");
                 }
+                if(headphones) headphones->pump();
                 if(live_config) {
                     input_meter=std::max(input_peak,input_meter*0.96f);
                     output_meter=std::max(output_peak,output_meter*0.96f);
@@ -455,6 +472,9 @@ int wmain(int argc,wchar_t** argv) {
     try {
         int selected_in=-1,selected_out=-1,seconds=0;
         bool list_only=false,allow_speakers=false,denoise_enabled=true,vad_enabled=true;
+        bool preview_only=false,monitor_initially_on=false;
+        float monitor_volume=0.35f;
+        std::wstring monitor_id;
         a50::VoiceGate::Options vad_options;
         a50::Settings voice_settings;
         voice_settings.highpass_enabled=false;
@@ -467,6 +487,10 @@ int wmain(int argc,wchar_t** argv) {
             if(option==L"--help" || option==L"-h") {help();return 0;}
             if(option==L"--list") list_only=true;
             else if(option==L"--allow-speaker-output") allow_speakers=true;
+            else if(option==L"--headphone-preview") preview_only=true;
+            else if(option==L"--monitor-on") monitor_initially_on=true;
+            else if(option==L"--monitor-volume" && i+1<argc) monitor_volume=std::stof(argv[++i]);
+            else if(option==L"--monitor-id" && i+1<argc) monitor_id=argv[++i];
             else if(option==L"--no-gate") settings.gate_enabled=false;
             else if(option==L"--no-denoise") denoise_enabled=false;
             else if(option==L"--no-vad") vad_enabled=false;
@@ -491,6 +515,8 @@ int wmain(int argc,wchar_t** argv) {
             else throw std::invalid_argument("Unknown or incomplete option");
         }
         if(seconds<0 || seconds>3600) throw std::invalid_argument("seconds must be 0..3600");
+        if(!std::isfinite(monitor_volume)||monitor_volume<0.f||monitor_volume>1.f)
+            throw std::invalid_argument("Monitor volume must be between 0 and 1");
         Apartment apartment;
         ComPtr<IMMDeviceEnumerator> enumerator;
         check(CoCreateInstance(__uuidof(MMDeviceEnumerator),nullptr,CLSCTX_ALL,
@@ -521,8 +547,31 @@ int wmain(int argc,wchar_t** argv) {
             throw std::runtime_error("ASTRO A50 Voice input not found. Run --list.");
         if(selected_out<0 || static_cast<std::size_t>(selected_out)>=outs.size())
             throw std::runtime_error("Virtual cable output not found. Install/configure VB-CABLE or use --list.");
-        if(!is_virtual_cable(outs[selected_out].name) && !allow_speakers)
+        const auto astro_headphones=[](const std::wstring& name) {
+            const auto n=lowercase(name);
+            return n.find(L"astro a50")!=std::wstring::npos &&
+                   n.find(L"game")!=std::wstring::npos;
+        };
+        if(preview_only) {
+            if(!astro_headphones(outs[selected_out].name))
+                throw std::runtime_error("Preview output must be ASTRO A50 Game headphones");
+        } else if(!is_virtual_cable(outs[selected_out].name) && !allow_speakers) {
             throw std::runtime_error("Refusing physical speaker output to prevent microphone feedback.");
+        }
+        IMMDevice* monitor_device=nullptr;
+        if(!monitor_id.empty() && !preview_only) {
+            for(const auto& device:outs)
+                if(device.id==monitor_id) {
+                    if(!astro_headphones(device.name))
+                        throw std::runtime_error("Live monitor requires ASTRO A50 Game headphones");
+                    if(device.id==outs[selected_out].id)
+                        throw std::runtime_error("Monitor and virtual output must differ");
+                    monitor_device=device.device.Get();
+                    break;
+                }
+            if(!monitor_device)
+                throw std::runtime_error("Selected ASTRO headphone monitor disconnected");
+        }
         std::wcout << L"Input: " << ins[selected_in].name
                    << L"\nOutput: " << outs[selected_out].name << L"\n";
         if(!stop_event_name.empty()) {
@@ -550,7 +599,8 @@ int wmain(int argc,wchar_t** argv) {
             if(!mapped.config) throw std::runtime_error("Cannot map GUI config");
         }
         route(ins[selected_in].device.Get(),outs[selected_out].device.Get(),settings,seconds,
-              denoise_enabled,vad_enabled,vad_options,voice_settings,mapped.config);
+              denoise_enabled,vad_enabled,vad_options,voice_settings,mapped.config,
+              monitor_device,preview_only,monitor_initially_on,monitor_volume);
         return 0;
     } catch(const std::exception& e) {
         std::cerr << "A50 VoiceClean live route: " << e.what() << "\n";
