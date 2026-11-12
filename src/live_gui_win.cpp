@@ -18,11 +18,17 @@ using Microsoft::WRL::ComPtr;
 namespace {
 enum : int {InputSelect=101,OutputSelect=102,Refresh=103,Start=104,Stop=105,
              GainSlider=201,ProbabilitySlider=202,FloorSlider=203,
-             DenoiseCheck=301,VadCheck=302};
+             DenoiseCheck=301,VadCheck=302,VoiceCheck=303,
+             PitchSlider=204,ResonanceSlider=205,BassSlider=206,
+             BrightnessSlider=207,MixSlider=208};
 HWND window=nullptr,in_combo=nullptr,out_combo=nullptr,gain_slider=nullptr,
      probability_slider=nullptr,floor_slider=nullptr,denoise_check=nullptr,
      vad_check=nullptr,status_text=nullptr,gain_value=nullptr,
      probability_value=nullptr,floor_value=nullptr,start_button=nullptr,stop_button=nullptr;
+HWND voice_check=nullptr,pitch_slider=nullptr,resonance_slider=nullptr,
+     bass_slider=nullptr,brightness_slider=nullptr,mix_slider=nullptr;
+HWND pitch_value=nullptr,resonance_value=nullptr,bass_value=nullptr,
+     brightness_value=nullptr,mix_value=nullptr;
 HFONT font=nullptr;
 PROCESS_INFORMATION process{};
 HANDLE stop_event=nullptr,job=nullptr;
@@ -106,6 +112,13 @@ void values() {
        (std::to_wstring(slider(probability_slider))+L" %").c_str());
     SetWindowTextW(floor_value,
        (std::to_wstring(slider(floor_slider))+L" dBFS").c_str());
+    SetWindowTextW(pitch_value,(std::to_wstring(slider(pitch_slider))+L" st").c_str());
+    SetWindowTextW(resonance_value,
+      (std::to_wstring(slider(resonance_slider))+L" %").c_str());
+    SetWindowTextW(bass_value,(std::to_wstring(slider(bass_slider))+L" dB").c_str());
+    SetWindowTextW(brightness_value,
+      (std::to_wstring(slider(brightness_slider))+L" dB").c_str());
+    SetWindowTextW(mix_value,(std::to_wstring(slider(mix_slider))+L" %").c_str());
 }
 bool running() {
     if(!process.hProcess) return false;
@@ -189,6 +202,13 @@ void start_engine() {
             L" --stop-event \""+event_name+L"\"";
         if(SendMessageW(denoise_check,BM_GETCHECK,0,0)!=BST_CHECKED) args+=L" --no-denoise";
         if(SendMessageW(vad_check,BM_GETCHECK,0,0)!=BST_CHECKED) args+=L" --no-vad";
+        if(SendMessageW(voice_check,BM_GETCHECK,0,0)==BST_CHECKED) {
+            args+=L" --voice --pitch "+std::to_wstring(slider(pitch_slider))+
+                  L" --resonance "+std::to_wstring(slider(resonance_slider)/100.0)+
+                  L" --bass-db "+std::to_wstring(slider(bass_slider))+
+                  L" --brightness-db "+std::to_wstring(slider(brightness_slider))+
+                  L" --voice-mix "+std::to_wstring(slider(mix_slider)/100.0);
+        }
         STARTUPINFOW si{};si.cb=sizeof(si);
         si.dwFlags=STARTF_USESTDHANDLES;
         si.hStdInput=nul;si.hStdOutput=logfile;si.hStdError=logfile;
@@ -223,34 +243,59 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
     switch(m) {
     case WM_CREATE: {
         window=h; font=static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-        control(L"STATIC",L"A50 VoiceClean - controllo microfono live",0,18,15,700,22);
-        control(L"STATIC",L"Microfono in ingresso",0,20,58,200,20);
-        in_combo=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,20,82,564,280,InputSelect);
-        control(L"STATIC",L"Uscita (VB-CABLE)",0,20,128,200,20);
-        out_combo=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,20,152,564,280,OutputSelect);
-        control(L"BUTTON",L"Aggiorna",BS_PUSHBUTTON,596,82,112,29,Refresh);
-        control(L"STATIC",L"Volume/guadagno voce",0,20,202,200,19);
-        gain_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,215,195,368,35,GainSlider);
-        gain_value=control(L"STATIC",L"",0,598,201,110,18);
-        control(L"STATIC",L"Sensibilita vocale (VAD)",0,20,259,200,19);
-        probability_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,215,252,368,35,ProbabilitySlider);
-        probability_value=control(L"STATIC",L"",0,598,258,110,18);
-        control(L"STATIC",L"Soglia minima voce",0,20,316,200,19);
-        floor_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,215,309,368,35,FloorSlider);
-        floor_value=control(L"STATIC",L"",0,598,315,110,18);
-        denoise_check=control(L"BUTTON",L"RNNoise (pulizia)",BS_AUTOCHECKBOX,20,370,185,24,DenoiseCheck);
-        vad_check=control(L"BUTTON",L"Attiva solo con voce (VAD)",BS_AUTOCHECKBOX,245,370,255,24,VadCheck);
+        control(L"STATIC",L"A50 VoiceClean | ASTRO A50 Gen 4 | Live",0,18,15,960,22);
+        control(L"STATIC",L"Microfono in ingresso",0,20,56,240,20);
+        in_combo=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,20,79,828,300,InputSelect);
+        control(L"STATIC",L"Uscita audio virtuale (VB-CABLE)",0,20,127,380,20);
+        out_combo=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,20,151,828,300,OutputSelect);
+        control(L"BUTTON",L"Aggiorna",BS_PUSHBUTTON,868,79,120,29,Refresh);
+
+        control(L"STATIC",L"Pulizia microfono",0,20,202,450,24);
+        control(L"STATIC",L"Volume/guadagno voce",0,20,250,190,19);
+        gain_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,215,242,290,35,GainSlider);
+        gain_value=control(L"STATIC",L"",0,518,250,90,18);
+        control(L"STATIC",L"Sensibilita VAD",0,20,310,190,19);
+        probability_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,215,302,290,35,ProbabilitySlider);
+        probability_value=control(L"STATIC",L"",0,518,310,90,18);
+        control(L"STATIC",L"Soglia minima voce",0,20,370,190,19);
+        floor_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,215,362,290,35,FloorSlider);
+        floor_value=control(L"STATIC",L"",0,518,370,90,18);
+        denoise_check=control(L"BUTTON",L"RNNoise (pulizia)",BS_AUTOCHECKBOX,20,423,185,24,DenoiseCheck);
+        vad_check=control(L"BUTTON",L"Attiva solo con voce (VAD)",BS_AUTOCHECKBOX,245,423,255,24,VadCheck);
         SendMessageW(denoise_check,BM_SETCHECK,BST_CHECKED,0);
         SendMessageW(vad_check,BM_SETCHECK,BST_CHECKED,0);
         set_slider(gain_slider,-12,24,0);
         set_slider(probability_slider,20,95,65);
         set_slider(floor_slider,-80,-20,-46);
+
+        control(L"STATIC",L"Modificatore vocale leggero (sperimentale)",0,624,202,380,24);
+        voice_check=control(L"BUTTON",L"Attiva trasformazione",BS_AUTOCHECKBOX,624,232,245,22,VoiceCheck);
+        control(L"STATIC",L"Tonalita",0,624,277,110,18);
+        pitch_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,742,270,162,31,PitchSlider);
+        pitch_value=control(L"STATIC",L"",0,916,277,80,18);
+        control(L"STATIC",L"Timbro",0,624,320,110,18);
+        resonance_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,742,313,162,31,ResonanceSlider);
+        resonance_value=control(L"STATIC",L"",0,916,320,80,18);
+        control(L"STATIC",L"Bassi",0,624,363,110,18);
+        bass_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,742,356,162,31,BassSlider);
+        bass_value=control(L"STATIC",L"",0,916,363,80,18);
+        control(L"STATIC",L"Brillantezza",0,624,406,110,18);
+        brightness_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,742,399,162,31,BrightnessSlider);
+        brightness_value=control(L"STATIC",L"",0,916,406,80,18);
+        control(L"STATIC",L"Intensita",0,624,449,110,18);
+        mix_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,742,442,162,31,MixSlider);
+        mix_value=control(L"STATIC",L"",0,916,449,80,18);
+        set_slider(pitch_slider,-12,12,4);
+        set_slider(resonance_slider,-100,100,35);
+        set_slider(bass_slider,-12,12,-3);
+        set_slider(brightness_slider,-12,12,2);
+        set_slider(mix_slider,0,100,100);
         values();
-        start_button=control(L"BUTTON",L"Avvia",BS_PUSHBUTTON,20,410,130,34,Start);
-        stop_button=control(L"BUTTON",L"Ferma",BS_PUSHBUTTON,165,410,130,34,Stop);
+        start_button=control(L"BUTTON",L"Avvia",BS_PUSHBUTTON,20,483,130,34,Start);
+        stop_button=control(L"BUTTON",L"Ferma",BS_PUSHBUTTON,165,483,130,34,Stop);
         EnableWindow(stop_button,FALSE);
-        control(L"STATIC",L"Le regolazioni si applicano al prossimo Avvia. Niente voce femminile live per ora.",0,20,452,700,22);
-        status_text=control(L"STATIC",L"Caricamento dispositivi...",0,20,484,700,39);
+        control(L"STATIC",L"Le modifiche si applicano al prossimo Avvia. La velocita audio live resta invariata.",0,20,528,955,22);
+        status_text=control(L"STATIC",L"Caricamento dispositivi...",0,20,557,955,35);
         try {populate();} catch(...) {message(L"Impossibile leggere i dispositivi audio.");}
         SetTimer(h,1,1000,nullptr);
         return 0;
@@ -291,7 +336,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show) {
     RegisterClassExW(&wc);
     HWND h=CreateWindowExW(0,wc.lpszClassName,L"A50 VoiceClean - Live",
         WS_OVERLAPPEDWINDOW&~WS_THICKFRAME,
-        CW_USEDEFAULT,CW_USEDEFAULT,752,575,
+        CW_USEDEFAULT,CW_USEDEFAULT,1035,651,
         nullptr,nullptr,instance,nullptr);
     if(!h) {CoUninitialize();return 1;}
     ShowWindow(h,show);UpdateWindow(h);
