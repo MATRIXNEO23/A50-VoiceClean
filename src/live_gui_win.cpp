@@ -24,7 +24,8 @@ enum : int {InputSelect=101,OutputSelect=102,Refresh=103,Start=104,Stop=105,
              DenoiseCheck=301,VadCheck=302,VoiceCheck=303,
              PitchSlider=204,ResonanceSlider=205,BassSlider=206,
              BrightnessSlider=207,MixSlider=208,
-             ProfileCombo=401,ProfileName=402,LoadProfile=403,SaveProfile=404};
+             ProfileCombo=401,ProfileName=402,LoadProfile=403,SaveProfile=404,
+             MonitorCheck=501,MonitorSelect=502,MonitorSlider=503};
 HWND window=nullptr,in_combo=nullptr,out_combo=nullptr,gain_slider=nullptr,
      probability_slider=nullptr,floor_slider=nullptr,denoise_check=nullptr,
      vad_check=nullptr,status_text=nullptr,gain_value=nullptr,
@@ -35,6 +36,8 @@ HWND pitch_value=nullptr,resonance_value=nullptr,bass_value=nullptr,
      brightness_value=nullptr,mix_value=nullptr;
 HWND profile_combo=nullptr,profile_name=nullptr;
 HWND input_meter=nullptr,output_meter=nullptr,speech_status=nullptr;
+HWND monitor_combo=nullptr,monitor_check=nullptr,monitor_slider=nullptr,monitor_value=nullptr;
+std::vector<int> monitor_output_indices;
 HFONT font=nullptr;
 PROCESS_INFORMATION process{};
 HANDLE stop_event=nullptr,job=nullptr,config_mapping=nullptr;
@@ -95,7 +98,9 @@ void populate() {
     outputs=endpoint_names(enumerator.Get(),eRender,output_ids);
     SendMessageW(in_combo,CB_RESETCONTENT,0,0);
     SendMessageW(out_combo,CB_RESETCONTENT,0,0);
-    int preferred_input=-1,preferred_output=-1;
+    SendMessageW(monitor_combo,CB_RESETCONTENT,0,0);
+    monitor_output_indices.clear();
+    int preferred_input=-1,preferred_output=-1,preferred_monitor=-1;
     for(std::size_t i=0;i<inputs.size();++i) {
         SendMessageW(in_combo,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(inputs[i].c_str()));
         auto n=lower(inputs[i]);
@@ -106,12 +111,22 @@ void populate() {
         SendMessageW(out_combo,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(outputs[i].c_str()));
         auto n=lower(outputs[i]);
         if(n.find(L"cable input")!=std::wstring::npos) preferred_output=static_cast<int>(i);
+        if(n.find(L"astro a50")!=std::wstring::npos &&
+           n.find(L"game")!=std::wstring::npos) {
+            const int ix=static_cast<int>(monitor_output_indices.size());
+            monitor_output_indices.push_back(static_cast<int>(i));
+            SendMessageW(monitor_combo,CB_ADDSTRING,0,
+                         reinterpret_cast<LPARAM>(outputs[i].c_str()));
+            preferred_monitor=ix;
+        }
     }
     if(preferred_input>=0) SendMessageW(in_combo,CB_SETCURSEL,preferred_input,0);
     else if(!inputs.empty()) SendMessageW(in_combo,CB_SETCURSEL,0,0);
     if(preferred_output>=0) SendMessageW(out_combo,CB_SETCURSEL,preferred_output,0);
-    message(preferred_output>=0?L"Microfoni caricati. Pronto per l'avvio."
-                               :L"Uscita CABLE Input non trovata: serve VB-CABLE per Jarvis.");
+    if(preferred_monitor>=0) SendMessageW(monitor_combo,CB_SETCURSEL,preferred_monitor,0);
+    if(preferred_output>=0) message(L"VB-CABLE pronto. Puoi attivare l'ascolto nelle Astro.");
+    else if(preferred_monitor>=0) message(L"Nessun VB-CABLE: puoi provare la voce solo in cuffia.");
+    else message(L"Non trovo ne VB-CABLE ne ASTRO A50 Game: controlla i dispositivi.");
 }
 int slider(HWND h) { return static_cast<int>(SendMessageW(h,TBM_GETPOS,0,0)); }
 void set_slider(HWND h,int from,int to,int initial) {
@@ -132,6 +147,9 @@ void values() {
     SetWindowTextW(brightness_value,
       (std::to_wstring(slider(brightness_slider))+L" dB").c_str());
     SetWindowTextW(mix_value,(std::to_wstring(slider(mix_slider))+L" %").c_str());
+    if(monitor_value)
+        SetWindowTextW(monitor_value,
+            (std::to_wstring(slider(monitor_slider))+L" %").c_str());
 }
 void publish_live_settings() {
     if(!shared_config) return;
@@ -145,6 +163,8 @@ void publish_live_settings() {
     v.bass_tenths=slider(bass_slider)*10;
     v.brightness_tenths=slider(brightness_slider)*10;
     v.mix_milli=slider(mix_slider)*10;
+    v.monitor_enabled=SendMessageW(monitor_check,BM_GETCHECK,0,0)==BST_CHECKED;
+    v.monitor_volume_milli=slider(monitor_slider)*10;
     a50::publish(shared_config,v);
 }
 std::filesystem::path profile_path() {
