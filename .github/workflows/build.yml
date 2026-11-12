@@ -21,6 +21,12 @@ jobs:
             build/Release/A50VoiceClean-GUI.exe
             build/Release/a50voiceclean.exe
           if-no-files-found: error
+      - name: Upload standalone microphone diagnostics (not a release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: A50-VoiceClean-WASAPI-Step1-Diagnostic
+          path: build/Release/A50VoiceClean-MicTest.exe
+          if-no-files-found: error
   linux-dsp:
     runs-on: ubuntu-24.04
     steps:
