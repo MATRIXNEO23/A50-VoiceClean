@@ -10,6 +10,7 @@
 #include <functiondiscoverykeys_devpkey.h>
 #include <wrl/client.h>
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -138,6 +139,46 @@ void publish_live_settings() {
     v.brightness_tenths=slider(brightness_slider)*10;
     v.mix_milli=slider(mix_slider)*10;
     a50::publish(shared_config,v);
+}
+std::filesystem::path profile_path() {
+    wchar_t root[32768]{};
+    const DWORD n=GetEnvironmentVariableW(L"APPDATA",root,32768);
+    if(!n||n>=32768) throw std::runtime_error("APPDATA");
+    const auto folder=std::filesystem::path(root)/L"A50VoiceClean";
+    std::filesystem::create_directories(folder);
+    return folder/L"live_profiles.ini";
+}
+std::array<HWND,8> profile_sliders() {
+    return {gain_slider,probability_slider,floor_slider,pitch_slider,
+            resonance_slider,bass_slider,brightness_slider,mix_slider};
+}
+a50::StoredProfile current_profile() {
+    a50::StoredProfile p;
+    const auto sliders=profile_sliders();
+    for(std::size_t i=0;i<8;++i)p.sliders[i]=slider(sliders[i]);
+    p.denoise=SendMessageW(denoise_check,BM_GETCHECK,0,0)==BST_CHECKED;
+    p.vad=SendMessageW(vad_check,BM_GETCHECK,0,0)==BST_CHECKED;
+    p.voice=SendMessageW(voice_check,BM_GETCHECK,0,0)==BST_CHECKED;
+    return p;
+}
+void apply_profile(const a50::StoredProfile& p) {
+    const auto handles=profile_sliders();
+    constexpr std::array<int,8> low{-12,20,-80,-12,-100,-12,-12,0};
+    constexpr std::array<int,8> high{24,95,-20,12,100,12,12,100};
+    for(std::size_t i=0;i<8;++i)
+        SendMessageW(handles[i],TBM_SETPOS,TRUE,std::clamp(p.sliders[i],low[i],high[i]));
+    SendMessageW(denoise_check,BM_SETCHECK,p.denoise?BST_CHECKED:BST_UNCHECKED,0);
+    SendMessageW(vad_check,BM_SETCHECK,p.vad?BST_CHECKED:BST_UNCHECKED,0);
+    SendMessageW(voice_check,BM_SETCHECK,p.voice?BST_CHECKED:BST_UNCHECKED,0);
+    values();publish_live_settings();
+}
+void refresh_profiles() {
+    SendMessageW(profile_combo,CB_RESETCONTENT,0,0);
+    for(const wchar_t* p:{L"Originale",L"Voce chiara",L"Voce femminile leggera"})
+        SendMessageW(profile_combo,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(p));
+    for(const auto& p:a50::list_profiles(profile_path()))
+        SendMessageW(profile_combo,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(p.c_str()));
+    SendMessageW(profile_combo,CB_SETCURSEL,0,0);
 }
 bool running() {
     if(!process.hProcess) return false;
