@@ -410,6 +410,12 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         start_button=control(L"BUTTON",L"Avvia",BS_PUSHBUTTON,20,483,130,34,Start);
         stop_button=control(L"BUTTON",L"Ferma",BS_PUSHBUTTON,165,483,130,34,Stop);
         EnableWindow(stop_button,FALSE);
+        control(L"STATIC",L"Profilo",0,316,492,72,18);
+        profile_combo=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,390,483,182,220,ProfileCombo);
+        control(L"BUTTON",L"Carica",BS_PUSHBUTTON,580,483,74,29,LoadProfile);
+        profile_name=control(L"EDIT",L"Nome profilo",WS_BORDER|ES_AUTOHSCROLL,668,486,165,23,ProfileName);
+        control(L"BUTTON",L"Salva",BS_PUSHBUTTON,843,483,105,29,SaveProfile);
+        try{refresh_profiles();}catch(...){message(L"Errore lettura profili.");}
         control(L"STATIC",L"Cursori regolabili in diretta. RNNoise/VAD richiedono riavvio. Velocita live invariata.",0,20,528,955,22);
         status_text=control(L"STATIC",L"Caricamento dispositivi...",0,20,557,955,35);
         try {populate();} catch(...) {message(L"Impossibile leggere i dispositivi audio.");}
@@ -423,6 +429,8 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         case Start: start_engine();return 0;
         case Stop: stop_engine();return 0;
         case VoiceCheck: publish_live_settings();return 0;
+        case LoadProfile: load_selected_profile();return 0;
+        case SaveProfile: save_current_profile();return 0;
         case DenoiseCheck: case VadCheck:
             if(running()) message(L"Per cambiare RNNoise o VAD premi Ferma e poi Avvia.");
             return 0;
