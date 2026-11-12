@@ -6,6 +6,7 @@
 #include <mmsystem.h>
 #include <algorithm>
 #include <array>
+#include <initializer_list>
 #include <cmath>
 #include <filesystem>
 #include <stdexcept>
@@ -109,7 +110,7 @@ void save_profile() {
     wchar_t name[100]{};
     GetWindowTextW(profile_edit,name,100);
     std::wstring n(name);
-    if(n.empty() || n.find_first_of(L"[]=\\r\\n;")!=std::wstring::npos ||
+    if(n.empty() || n.find_first_of(L"[]=\r\n;")!=std::wstring::npos ||
        n==L"Originale" || n==L"Voce piu chiara" || n==L"Voce piu acuta") {
         MessageBoxW(main_window,L"Inserisci un nome profilo valido e diverso dai preset.",L"Profilo",MB_OK|MB_ICONWARNING);
         return;
