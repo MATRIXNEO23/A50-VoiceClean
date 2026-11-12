@@ -96,9 +96,10 @@ void Processor::process(float* samples, std::size_t count) {
             gate_gain_ = alpha * gate_gain_ + (1.0f - alpha) * (open ? 1.0f : 0.0f);
         } else gate_gain_ = 1.0f;
         y *= gain * gate_gain_;
-        if (settings_.voice_enabled) {
+        if (settings_.voice_enabled && settings_.effect_mix > 0.00001f) {
             const float dry = y;
-            float wet = shift_pitch(y, ratio);
+            // Avoid granular pitch artifacts and CPU work if pitch is unchanged.
+            float wet = std::fabs(settings_.pitch_semitones) < 0.001f ? y : shift_pitch(y, ratio);
             low_bass_ += lp_bass * (wet - low_bass_);
             low_tone_ += lp_tone * (wet - low_tone_);
             low_bright_ += lp_bright * (wet - low_bright_);
