@@ -36,7 +36,8 @@ private:
     float gain_=0.f;
 
 public:
-    explicit VoiceGate(Options options = {}) : opt_(options) {
+    VoiceGate() : VoiceGate(Options{}) {}
+    explicit VoiceGate(Options options) : opt_(options) {
         if(!std::isfinite(options.probability_threshold) ||
            options.probability_threshold<0.f || options.probability_threshold>1.f ||
            !std::isfinite(options.minimum_voice_db) ||
@@ -59,7 +60,7 @@ public:
         const float floor=std::pow(10.f,opt_.minimum_voice_db/20.f);
         const bool candidate=std::isfinite(speech_probability) &&
              speech_probability>=opt_.probability_threshold && rms>=floor;
-        if(candidate) ++hits_;
+        if(candidate) hits_=std::min(hits_+1,opt_.attack_frames);
         else hits_=0;
         if(hits_>=opt_.attack_frames) {
             const auto start=next_index_>opt_.preroll_frames
