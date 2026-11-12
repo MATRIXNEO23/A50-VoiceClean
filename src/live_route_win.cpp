@@ -128,6 +128,7 @@ void encode(BYTE* b, AudioFormat::Kind kind, float x) {
 struct Endpoint {
     ComPtr<IMMDevice> device;
     std::wstring name;
+    std::wstring id;
 };
 std::wstring name_of(IMMDevice* device) {
     ComPtr<IPropertyStore> store;
@@ -149,6 +150,10 @@ std::vector<Endpoint> list(IMMDeviceEnumerator* enumerator,EDataFlow flow) {
         Endpoint ep;
         check(coll->Item(i,&ep.device),"Item");
         ep.name=name_of(ep.device.Get());
+        LPWSTR device_id=nullptr;
+        check(ep.device->GetId(&device_id),"Endpoint GetId");
+        ep.id=device_id?device_id:L"";
+        CoTaskMemFree(device_id);
         result.push_back(std::move(ep));
     }
     return result;
@@ -190,6 +195,7 @@ void help() {
       L"A50 VoiceClean — WASAPI live routing diagnostic (step 2)\n"
       L"  A50VoiceClean-Live.exe --list\n"
       L"  A50VoiceClean-Live.exe --input N --output N [--seconds 30]\n"
+      L"  A50VoiceClean-Live.exe --input-id ID --output-id ID\n"
       L"  [--gain-db N] [--threshold-db N] [--no-gate] [--no-highpass]\n"
       L"  [--allow-speaker-output] [--no-denoise] [--no-vad]\n"
       L"  [--vad-prob 0.65] [--voice-min-db -46] [--stop-event NAME]\n"
@@ -393,7 +399,7 @@ int wmain(int argc,wchar_t** argv) {
         voice_settings.highpass_enabled=false;
         voice_settings.gate_enabled=false;
         voice_settings.gain_db=0.f;
-        std::wstring stop_event_name,config_map_name;
+        std::wstring stop_event_name,config_map_name,input_device_id,output_device_id;
         a50::Settings settings;
         for(int i=1;i<argc;++i) {
             std::wstring option=argv[i];
@@ -415,7 +421,9 @@ int wmain(int argc,wchar_t** argv) {
             else if(option==L"--voice-min-db" && i+1<argc) vad_options.minimum_voice_db=std::stof(argv[++i]);
             else if(option==L"--no-highpass") settings.highpass_enabled=false;
             else if(option==L"--input" && i+1<argc) selected_in=std::stoi(argv[++i]);
+            else if(option==L"--input-id" && i+1<argc) input_device_id=argv[++i];
             else if(option==L"--output" && i+1<argc) selected_out=std::stoi(argv[++i]);
+            else if(option==L"--output-id" && i+1<argc) output_device_id=argv[++i];
             else if(option==L"--seconds" && i+1<argc) seconds=std::stoi(argv[++i]);
             else if(option==L"--gain-db" && i+1<argc) settings.gain_db=std::stof(argv[++i]);
             else if(option==L"--threshold-db" && i+1<argc) settings.threshold_dbfs=std::stof(argv[++i]);
@@ -435,8 +443,19 @@ int wmain(int argc,wchar_t** argv) {
         for(std::size_t i=0;i<outs.size();++i)
             std::wcout << L"  [" << i << L"] " << outs[i].name << L"\n";
         if(list_only) return 0;
-        if(selected_in == -1) selected_in=find_microphone(ins);
-        if(selected_out == -1) selected_out=find_virtual_output(outs);
+        // Stable endpoint IDs prevent misrouting if Windows changes device order.
+        if(!input_device_id.empty()) {
+            selected_in=-1;
+            for(std::size_t i=0;i<ins.size();++i)
+                if(ins[i].id==input_device_id) selected_in=static_cast<int>(i);
+            if(selected_in<0) throw std::runtime_error("Selected microphone disconnected");
+        } else if(selected_in == -1) selected_in=find_microphone(ins);
+        if(!output_device_id.empty()) {
+            selected_out=-1;
+            for(std::size_t i=0;i<outs.size();++i)
+                if(outs[i].id==output_device_id) selected_out=static_cast<int>(i);
+            if(selected_out<0) throw std::runtime_error("Selected output disconnected");
+        } else if(selected_out == -1) selected_out=find_virtual_output(outs);
         if(selected_in<0 || static_cast<std::size_t>(selected_in)>=ins.size())
             throw std::runtime_error("ASTRO A50 Voice input not found. Run --list.");
         if(selected_out<0 || static_cast<std::size_t>(selected_out)>=outs.size())
