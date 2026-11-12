@@ -6,6 +6,7 @@
 #include "live_buffer.h"
 #include "rnnoise_filter.h"
 #include "voice_gate.h"
+#include "live_shared.h"
 #include <windows.h>
 #include <audioclient.h>
 #include <mmdeviceapi.h>
@@ -186,6 +187,7 @@ void help() {
       L"  [--gain-db N] [--threshold-db N] [--no-gate] [--no-highpass]\n"
       L"  [--allow-speaker-output] [--no-denoise] [--no-vad]\n"
       L"  [--vad-prob 0.65] [--voice-min-db -46] [--stop-event NAME]\n"
+      L"  [--config-map NAME] (Windows native control panel)\n"
       L"  [--voice] [--pitch 4] [--resonance 0.35] [--bass-db -3]\n"
       L"  [--brightness-db 2] [--voice-mix 1.0]\n\n"
       L"Defaults: ASTRO A50 Voice input and VB-CABLE/CABLE Input output.\n"
@@ -197,7 +199,7 @@ void help() {
 void route(IMMDevice* microphone, IMMDevice* destination,
            a50::Settings settings, int duration, bool denoise_enabled,
            bool vad_enabled, a50::VoiceGate::Options vad_options,
-           a50::Settings voice_settings) {
+           a50::Settings voice_settings,a50::LiveShared* live_config) {
     ComPtr<IAudioClient> input, output;
     check(microphone->Activate(__uuidof(IAudioClient),CLSCTX_ALL,nullptr,&input),
           "Activate input");
@@ -242,6 +244,7 @@ void route(IMMDevice* microphone, IMMDevice* destination,
     const auto start=std::chrono::steady_clock::now();
     auto last=start;
     std::uint64_t captured=0;
+    LONG last_settings_generation=-1;
     check(input->Start(),"Start input");
     try {
         check(output->Start(),"Start output");
@@ -250,6 +253,27 @@ void route(IMMDevice* microphone, IMMDevice* destination,
                   !(external_stop_event && WaitForSingleObject(external_stop_event,0)==WAIT_OBJECT_0) &&
                   (duration==0 || std::chrono::steady_clock::now()-start <
                     std::chrono::seconds(duration))) {
+                if(live_config) {
+                    a50::LiveValues vals;
+                    LONG generation=0;
+                    if(a50::snapshot(live_config,vals,generation) &&
+                       generation!=last_settings_generation) {
+                        last_settings_generation=generation;
+                        settings.gain_db=std::clamp(vals.gain_tenths/10.f,-24.f,24.f);
+                        dsp.set_settings(settings);
+                        voice_settings.voice_enabled=vals.voice_enabled!=0;
+                        voice_settings.pitch_semitones=std::clamp(vals.pitch_tenths/10.f,-12.f,12.f);
+                        voice_settings.resonance=std::clamp(vals.resonance_milli/1000.f,-1.f,1.f);
+                        voice_settings.bass_db=std::clamp(vals.bass_tenths/10.f,-18.f,18.f);
+                        voice_settings.brightness_db=std::clamp(vals.brightness_tenths/10.f,-18.f,18.f);
+                        voice_settings.effect_mix=std::clamp(vals.mix_milli/1000.f,0.f,1.f);
+                        voice_48k.set_settings(voice_settings);
+                        voice_input_rate.set_settings(voice_settings);
+                        if(vad) vad->set_sensitivity(
+                            std::clamp(vals.probability_milli/1000.f,0.f,1.f),
+                            std::clamp(vals.min_voice_db_tenths/10.f,-90.f,0.f));
+                    }
+                }
                 UINT32 available=0;
                 check(capture->GetNextPacketSize(&available),"GetNextPacketSize");
                 while(available) {
@@ -350,7 +374,7 @@ int wmain(int argc,wchar_t** argv) {
         voice_settings.highpass_enabled=false;
         voice_settings.gate_enabled=false;
         voice_settings.gain_db=0.f;
-        std::wstring stop_event_name;
+        std::wstring stop_event_name,config_map_name;
         a50::Settings settings;
         for(int i=1;i<argc;++i) {
             std::wstring option=argv[i];
@@ -367,6 +391,7 @@ int wmain(int argc,wchar_t** argv) {
             else if(option==L"--brightness-db" && i+1<argc) voice_settings.brightness_db=std::stof(argv[++i]);
             else if(option==L"--voice-mix" && i+1<argc) voice_settings.effect_mix=std::stof(argv[++i]);
             else if(option==L"--stop-event" && i+1<argc) stop_event_name=argv[++i];
+            else if(option==L"--config-map" && i+1<argc) config_map_name=argv[++i];
             else if(option==L"--vad-prob" && i+1<argc) vad_options.probability_threshold=std::stof(argv[++i]);
             else if(option==L"--voice-min-db" && i+1<argc) vad_options.minimum_voice_db=std::stof(argv[++i]);
             else if(option==L"--no-highpass") settings.highpass_enabled=false;
@@ -410,7 +435,23 @@ int wmain(int argc,wchar_t** argv) {
         if(!denoise_enabled) vad_enabled=false;
         // Avoid doubling the gate: the speech-aware VAD replaces the old amplitude-only gate.
         if(vad_enabled) settings.gate_enabled=false;
-        route(ins[selected_in].device.Get(),outs[selected_out].device.Get(),settings,seconds,denoise_enabled,vad_enabled,vad_options,voice_settings);
+        struct MappedControl {
+            HANDLE mapping=nullptr;
+            a50::LiveShared* config=nullptr;
+            ~MappedControl() {
+                if(config) UnmapViewOfFile(config);
+                if(mapping) CloseHandle(mapping);
+            }
+        } mapped;
+        if(!config_map_name.empty()) {
+            mapped.mapping=OpenFileMappingW(FILE_MAP_ALL_ACCESS,FALSE,config_map_name.c_str());
+            if(!mapped.mapping) throw std::runtime_error("Cannot open GUI config mapping");
+            mapped.config=static_cast<a50::LiveShared*>(MapViewOfFile(
+                mapped.mapping,FILE_MAP_ALL_ACCESS,0,0,sizeof(a50::LiveShared)));
+            if(!mapped.config) throw std::runtime_error("Cannot map GUI config");
+        }
+        route(ins[selected_in].device.Get(),outs[selected_out].device.Get(),settings,seconds,
+              denoise_enabled,vad_enabled,vad_options,voice_settings,mapped.config);
         return 0;
     } catch(const std::exception& e) {
         std::cerr << "A50 VoiceClean live route: " << e.what() << "\n";
