@@ -34,6 +34,7 @@ HWND voice_check=nullptr,pitch_slider=nullptr,resonance_slider=nullptr,
 HWND pitch_value=nullptr,resonance_value=nullptr,bass_value=nullptr,
      brightness_value=nullptr,mix_value=nullptr;
 HWND profile_combo=nullptr,profile_name=nullptr;
+HWND input_meter=nullptr,output_meter=nullptr,speech_status=nullptr;
 HFONT font=nullptr;
 PROCESS_INFORMATION process{};
 HANDLE stop_event=nullptr,job=nullptr,config_mapping=nullptr;
@@ -236,6 +237,9 @@ void cleanup() {
     if(config_mapping) {CloseHandle(config_mapping);config_mapping=nullptr;}
 }
 void stop_engine() {
+    if(input_meter) SendMessageW(input_meter,PBM_SETPOS,0,0);
+    if(output_meter) SendMessageW(output_meter,PBM_SETPOS,0,0);
+    if(speech_status) SetWindowTextW(speech_status,L"Parlato 0%");
     if(process.hProcess) {
         if(stop_event) SetEvent(stop_event);
         if(WaitForSingleObject(process.hProcess,2500)==WAIT_TIMEOUT) {
@@ -366,6 +370,13 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         out_combo=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,20,151,828,300,OutputSelect);
         control(L"BUTTON",L"Aggiorna",BS_PUSHBUTTON,868,79,120,29,Refresh);
 
+        control(L"STATIC",L"Input",0,20,183,75,16);
+        input_meter=control(PROGRESS_CLASSW,L"",PBS_SMOOTH,96,181,276,14);
+        control(L"STATIC",L"Filtrato",0,396,183,82,16);
+        output_meter=control(PROGRESS_CLASSW,L"",PBS_SMOOTH,476,181,270,14);
+        speech_status=control(L"STATIC",L"Parlato 0%",0,760,183,210,16);
+        SendMessageW(input_meter,PBM_SETRANGE32,0,1000);
+        SendMessageW(output_meter,PBM_SETRANGE32,0,1000);
         control(L"STATIC",L"Pulizia microfono",0,20,202,450,24);
         control(L"STATIC",L"Volume/guadagno voce",0,20,250,190,19);
         gain_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,215,242,290,35,GainSlider);
@@ -419,7 +430,7 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         control(L"STATIC",L"Cursori regolabili in diretta. RNNoise/VAD richiedono riavvio. Velocita live invariata.",0,20,528,955,22);
         status_text=control(L"STATIC",L"Caricamento dispositivi...",0,20,557,955,35);
         try {populate();} catch(...) {message(L"Impossibile leggere i dispositivi audio.");}
-        SetTimer(h,1,1000,nullptr);
+        SetTimer(h,1,100,nullptr);
         return 0;
     }
     case WM_HSCROLL: values();publish_live_settings();return 0;
@@ -437,6 +448,15 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         }
         return 0;
     case WM_TIMER:
+        if(shared_config) {
+            const LONG a=a50::read_atomic(&shared_config->meter_input_db);
+            const LONG b=a50::read_atomic(&shared_config->meter_output_db);
+            const LONG p=a50::read_atomic(&shared_config->voice_probability_milli);
+            SendMessageW(input_meter,PBM_SETPOS,std::clamp(a,0L,1000L),0);
+            SendMessageW(output_meter,PBM_SETPOS,std::clamp(b,0L,1000L),0);
+            SetWindowTextW(speech_status,
+                (L"Parlato "+std::to_wstring(std::clamp(p,0L,1000L)/10)+L"%").c_str());
+        }
         if(process.hProcess && !running()) {
             DWORD code=0;GetExitCodeProcess(process.hProcess,&code);
             cleanup();
@@ -454,7 +474,7 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show) {
     const HRESULT co=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
     if(FAILED(co))return 1;
-    INITCOMMONCONTROLSEX init{sizeof(init),ICC_BAR_CLASSES};
+    INITCOMMONCONTROLSEX init{sizeof(init),ICC_BAR_CLASSES|ICC_PROGRESS_CLASS};
     InitCommonControlsEx(&init);
     WNDCLASSEXW wc{};wc.cbSize=sizeof(wc);wc.hInstance=instance;
     wc.lpszClassName=L"A50VoiceCleanLiveController";
