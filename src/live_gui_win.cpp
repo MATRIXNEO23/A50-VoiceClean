@@ -4,6 +4,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "live_shared.h"
+#include "live_profiles_win.h"
 #include <commctrl.h>
 #include <mmdeviceapi.h>
 #include <functiondiscoverykeys_devpkey.h>
@@ -21,7 +22,8 @@ enum : int {InputSelect=101,OutputSelect=102,Refresh=103,Start=104,Stop=105,
              GainSlider=201,ProbabilitySlider=202,FloorSlider=203,
              DenoiseCheck=301,VadCheck=302,VoiceCheck=303,
              PitchSlider=204,ResonanceSlider=205,BassSlider=206,
-             BrightnessSlider=207,MixSlider=208};
+             BrightnessSlider=207,MixSlider=208,
+             ProfileCombo=401,ProfileName=402,LoadProfile=403,SaveProfile=404};
 HWND window=nullptr,in_combo=nullptr,out_combo=nullptr,gain_slider=nullptr,
      probability_slider=nullptr,floor_slider=nullptr,denoise_check=nullptr,
      vad_check=nullptr,status_text=nullptr,gain_value=nullptr,
@@ -30,6 +32,7 @@ HWND voice_check=nullptr,pitch_slider=nullptr,resonance_slider=nullptr,
      bass_slider=nullptr,brightness_slider=nullptr,mix_slider=nullptr;
 HWND pitch_value=nullptr,resonance_value=nullptr,bass_value=nullptr,
      brightness_value=nullptr,mix_value=nullptr;
+HWND profile_combo=nullptr,profile_name=nullptr;
 HFONT font=nullptr;
 PROCESS_INFORMATION process{};
 HANDLE stop_event=nullptr,job=nullptr,config_mapping=nullptr;
