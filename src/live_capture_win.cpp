@@ -260,6 +260,9 @@ int wmain(int argc, wchar_t** argv) {
             std::wcout << L"  [" << i << L"] " << devices[i].name << L"\n";
         if(list_only) return 0;
         if(output.empty()) { usage(); return 2; }
+        // A diagnostic must never overwrite a recording without explicit consent.
+        if (std::filesystem::exists(output))
+            throw std::runtime_error("Il file WAV esiste gia: scegli un nuovo nome --output.");
         if(device_index<0) {
             for(std::size_t i=0;i<devices.size();++i) {
                 const auto name=lowercase(devices[i].name);
