@@ -8,8 +8,8 @@
 Dipendenza di compilazione: fork CMake di RNNoise per Windows \`jagger2048/rnnoise-windows\` fissato al commit \`d24c92c4f41eb786a18d25feea350cdf3319eee5\`. Codice RNNoise BSD-3-Clause e pesi secondo le rispettive condizioni di licenza upstream. Non richiede rete durante l'esecuzione, né AVX2.
 
 ## Criteri di completamento
-- [ ] Test RNNoise su Windows CI (frame 480 campioni, nessun NaN).
-- [ ] Compilazione release x64 senza AVX2.
+- [x] Test RNNoise su Windows CI (frame 480 campioni, nessun NaN).
+- [x] Compilazione Release x64 senza richiedere AVX2 (verificata via CI, non ancora su i3-2100).
 - [ ] Confronto in ascolto reale con il microfono A50 e \`--no-denoise\`.
 - [ ] Test rumori di fondo: ventole, televisione, voci lontane.
 - [ ] Misura consumo CPU sul processore i3-2100 e latenza.
