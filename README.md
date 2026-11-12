@@ -21,6 +21,12 @@ Il sorgente `src/live_capture_win.cpp` aggiunge una utility di **diagnostica** W
 
 La compilazione Windows è affidata a GitHub Actions; prima di dichiarare completato il passo sono indispensabili la verifica del workflow e un test sulle vere cuffie Astro A50 Gen 4. Questa utility non è una release per l'uso quotidiano e non sostituisce l'applicazione live finale. La checklist e le istruzioni sono in [docs/STEP_01_WASAPI.md](docs/STEP_01_WASAPI.md).
 
+## Sviluppo successivo alla v0.2 (ancora NON una release)
+
+Il repository include anche i moduli Windows `A50VoiceClean-MicTest.exe` e `A50VoiceClean-Live.exe`, costruiti e testati in GitHub Actions. La pipeline sperimentale comprende input WASAPI, routing verso VB-CABLE e RNNoise a 48 kHz. Il modulo live è documentato in [passo 2](docs/STEP_02_LIVE_ROUTE.md) e [passo 3](docs/STEP_03_RNNOISE.md).
+
+**Attenzione:** non abbiamo ancora verificato la pipeline sul vero hardware Astro A50 Gen 4, la latenza e il consumo CPU sul PC i3-2100. L'uscita live non dispone ancora di interfaccia grafica, vero VAD e modificatore vocale live. Rimane quindi una diagnostica di sviluppo, non il programma completo da installare. La v0.2 WAV resta l'ultima versione utilizzabile indipendentemente.
+
 ## Hardware di riferimento
 
 - Astro A50 Gen 4, firmware cuffie 39964.43, firmware base 40372.43
