@@ -4,6 +4,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include "dsp.h"
 #include "live_buffer.h"
+#include "rnnoise_filter.h"
 #include <windows.h>
 #include <audioclient.h>
 #include <mmdeviceapi.h>
@@ -13,6 +14,8 @@
 #include <ksmedia.h>
 #include <mmreg.h>
 #include <algorithm>
+#include <array>
+#include <memory>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -179,14 +182,14 @@ void help() {
       L"  A50VoiceClean-Live.exe --list\n"
       L"  A50VoiceClean-Live.exe --input N --output N [--seconds 30]\n"
       L"  [--gain-db N] [--threshold-db N] [--no-gate] [--no-highpass]\n"
-      L"  [--allow-speaker-output]\n\n"
+      L"  [--allow-speaker-output] [--no-denoise]\n\n"
       L"Defaults: ASTRO A50 Voice input and VB-CABLE/CABLE Input output.\n"
       L"For safety the output must be a virtual cable unless --allow-speaker-output.\n"
       L"Run with --seconds 0 (default) to stop using Ctrl+C.\n"
-      L"This stage does not yet include RNNoise, true VAD or voice changing.\n";
+      L"RNNoise is ON by default; true VAD and voice changing are not live yet.\n";
 }
 void route(IMMDevice* microphone, IMMDevice* destination,
-           a50::Settings settings, int duration) {
+           a50::Settings settings, int duration, bool denoise_enabled) {
     ComPtr<IAudioClient> input, output;
     check(microphone->Activate(__uuidof(IAudioClient),CLSCTX_ALL,nullptr,&input),
           "Activate input");
@@ -210,7 +213,13 @@ void route(IMMDevice* microphone, IMMDevice* destination,
     UINT32 out_buffer_frames=0;
     check(output->GetBufferSize(&out_buffer_frames),"GetBufferSize output");
     Queue queue(static_cast<std::size_t>(out.rate)*2);
-    Resampler resampler(in.rate,out.rate);
+    Resampler resampler(in.rate,out.rate); // bypass path
+    Resampler to_48k(in.rate,48000);
+    Resampler from_48k(48000,out.rate);
+    Queue pending_48k(48000);
+    std::array<float,480> denoised_frame{};
+    std::unique_ptr<a50::RNNoiseFilter> denoiser;
+    if(denoise_enabled) denoiser=std::make_unique<a50::RNNoiseFilter>();
     a50::Processor dsp(in.rate,settings);
     std::vector<float> block;
     const std::size_t prebuffer=static_cast<std::size_t>(out.rate)*40/1000;
@@ -247,7 +256,16 @@ void route(IMMDevice* microphone, IMMDevice* destination,
                     }
                     check(capture->ReleaseBuffer(frames),"Capture ReleaseBuffer");
                     dsp.process(block.data(),block.size());
-                    for(float sample:block) resampler.feed(sample,queue);
+                    if(denoiser) {
+                        for(float sample:block) to_48k.feed(sample,pending_48k);
+                        while(pending_48k.size()) {
+                            if(denoiser->feed(pending_48k.pop(),denoised_frame))
+                                for(float sample:denoised_frame)
+                                    from_48k.feed(sample,queue);
+                        }
+                    } else {
+                        for(float sample:block) resampler.feed(sample,queue);
+                    }
                     queue.trim_to(static_cast<std::size_t>(out.rate)*200/1000);
                     captured+=frames;
                     check(capture->GetNextPacketSize(&available),"GetNextPacketSize");
@@ -295,7 +313,7 @@ void route(IMMDevice* microphone, IMMDevice* destination,
 int wmain(int argc,wchar_t** argv) {
     try {
         int selected_in=-1,selected_out=-1,seconds=0;
-        bool list_only=false,allow_speakers=false;
+        bool list_only=false,allow_speakers=false,denoise_enabled=true;
         a50::Settings settings;
         for(int i=1;i<argc;++i) {
             std::wstring option=argv[i];
@@ -303,6 +321,7 @@ int wmain(int argc,wchar_t** argv) {
             if(option==L"--list") list_only=true;
             else if(option==L"--allow-speaker-output") allow_speakers=true;
             else if(option==L"--no-gate") settings.gate_enabled=false;
+            else if(option==L"--no-denoise") denoise_enabled=false;
             else if(option==L"--no-highpass") settings.highpass_enabled=false;
             else if(option==L"--input" && i+1<argc) selected_in=std::stoi(argv[++i]);
             else if(option==L"--output" && i+1<argc) selected_out=std::stoi(argv[++i]);
@@ -337,7 +356,7 @@ int wmain(int argc,wchar_t** argv) {
                    << L"\nOutput: " << outs[selected_out].name << L"\n";
         if(!SetConsoleCtrlHandler(on_console_event,TRUE))
             throw std::runtime_error("Could not register Ctrl+C handler");
-        route(ins[selected_in].device.Get(),outs[selected_out].device.Get(),settings,seconds);
+        route(ins[selected_in].device.Get(),outs[selected_out].device.Get(),settings,seconds,denoise_enabled);
         return 0;
     } catch(const std::exception& e) {
         std::cerr << "A50 VoiceClean live route: " << e.what() << "\n";
