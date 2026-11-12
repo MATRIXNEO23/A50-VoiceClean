@@ -19,7 +19,7 @@ void put32(std::ofstream& f, uint32_t n) {
 }
 void require(bool condition, const char* msg) { if (!condition) throw std::runtime_error(msg); }
 }
-Wave read_pcm16_mono_wave(const std::string& path) {
+Wave read_pcm16_mono_wave(const std::filesystem::path& path) {
     std::ifstream f(path, std::ios::binary);
     require(bool(f), "Cannot open input WAV");
     unsigned char header[12]{};
@@ -61,7 +61,7 @@ Wave read_pcm16_mono_wave(const std::string& path) {
     }
     return w;
 }
-void write_pcm16_mono_wave(const std::string& path, const Wave& w) {
+void write_pcm16_mono_wave(const std::filesystem::path& path, const Wave& w) {
     require(w.sample_rate >= 8000 && w.sample_rate <= 192000, "Invalid sample rate");
     require(w.samples.size() <= (0xffffffffu - 36u) / 2u, "WAV exceeds RIFF size limit");
     std::ofstream f(path, std::ios::binary);
