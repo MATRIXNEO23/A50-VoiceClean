@@ -32,6 +32,7 @@
 using Microsoft::WRL::ComPtr;
 namespace {
 std::atomic_bool interrupted{false};
+HANDLE external_stop_event=nullptr;
 BOOL WINAPI on_console_event(DWORD type) {
     if (type == CTRL_C_EVENT || type == CTRL_BREAK_EVENT ||
         type == CTRL_CLOSE_EVENT || type == CTRL_SHUTDOWN_EVENT) {
@@ -184,7 +185,7 @@ void help() {
       L"  A50VoiceClean-Live.exe --input N --output N [--seconds 30]\n"
       L"  [--gain-db N] [--threshold-db N] [--no-gate] [--no-highpass]\n"
       L"  [--allow-speaker-output] [--no-denoise] [--no-vad]\n"
-      L"  [--vad-prob 0.65] [--voice-min-db -46]\n\n"
+      L"  [--vad-prob 0.65] [--voice-min-db -46] [--stop-event NAME]\n\n"
       L"Defaults: ASTRO A50 Voice input and VB-CABLE/CABLE Input output.\n"
       L"For safety the output must be a virtual cable unless --allow-speaker-output.\n"
       L"Run with --seconds 0 (default) to stop using Ctrl+C.\n"
@@ -239,6 +240,7 @@ void route(IMMDevice* microphone, IMMDevice* destination,
         check(output->Start(),"Start output");
         try {
             while(!interrupted.load() &&
+                  !(external_stop_event && WaitForSingleObject(external_stop_event,0)==WAIT_OBJECT_0) &&
                   (duration==0 || std::chrono::steady_clock::now()-start <
                     std::chrono::seconds(duration))) {
                 UINT32 available=0;
@@ -330,6 +332,7 @@ int wmain(int argc,wchar_t** argv) {
         int selected_in=-1,selected_out=-1,seconds=0;
         bool list_only=false,allow_speakers=false,denoise_enabled=true,vad_enabled=true;
         a50::VoiceGate::Options vad_options;
+        std::wstring stop_event_name;
         a50::Settings settings;
         for(int i=1;i<argc;++i) {
             std::wstring option=argv[i];
@@ -339,6 +342,7 @@ int wmain(int argc,wchar_t** argv) {
             else if(option==L"--no-gate") settings.gate_enabled=false;
             else if(option==L"--no-denoise") denoise_enabled=false;
             else if(option==L"--no-vad") vad_enabled=false;
+            else if(option==L"--stop-event" && i+1<argc) stop_event_name=argv[++i];
             else if(option==L"--vad-prob" && i+1<argc) vad_options.probability_threshold=std::stof(argv[++i]);
             else if(option==L"--voice-min-db" && i+1<argc) vad_options.minimum_voice_db=std::stof(argv[++i]);
             else if(option==L"--no-highpass") settings.highpass_enabled=false;
@@ -373,6 +377,10 @@ int wmain(int argc,wchar_t** argv) {
             throw std::runtime_error("Refusing physical speaker output to prevent microphone feedback.");
         std::wcout << L"Input: " << ins[selected_in].name
                    << L"\nOutput: " << outs[selected_out].name << L"\n";
+        if(!stop_event_name.empty()) {
+            external_stop_event=OpenEventW(SYNCHRONIZE,FALSE,stop_event_name.c_str());
+            if(!external_stop_event) throw std::runtime_error("Cannot open GUI stop event");
+        }
         if(!SetConsoleCtrlHandler(on_console_event,TRUE))
             throw std::runtime_error("Could not register Ctrl+C handler");
         if(!denoise_enabled) vad_enabled=false;
