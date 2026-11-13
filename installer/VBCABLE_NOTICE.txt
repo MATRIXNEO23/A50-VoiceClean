@@ -15,6 +15,22 @@ il programma di installazione ufficiale VBCABLE_Setup_x64.exe.
 Per completare l'installazione o la rimozione del driver, Windows può
 richiedere autorizzazioni di amministratore e un RIAVVIO.
 
+PRIMA DI INSTALLARE: VoiceClean controlla in Windows se il driver
+VB-Audio Virtual Cable e' gia' presente. Se lo trova, lo riutilizza e NON
+apre l'installer del driver. Se non riesce a verificare lo stato, evita
+l'avvio automatico: puoi intervenire manualmente con il setup ufficiale.
+NON premere Remove Driver se vuoi conservare il dispositivo esistente.
+
+ATTENZIONE ALL'USCITA AUDIO: dopo l'installazione di un nuovo driver,
+Windows 10/11 puo' impostare CABLE Input come uscita predefinita. In tal
+caso non sentirai Lumi, musica o altri suoni nelle cuffie. Controlla:
+- Uscita Windows (riproduzione): CUFFIE ASTRO A50 GAME.
+- Ingresso Windows (registrazione): CABLE OUTPUT, solo se VoiceClean
+  e' attivo e invia il microfono filtrato a CABLE INPUT.
+- Dentro VoiceClean: ingresso MICROFONO ASTRO A50 VOICE;
+  uscita audio virtuale CABLE INPUT; monitor opzionale ASTRO A50 GAME.
+VoiceClean non deve impostare CABLE Input come uscita predefinita Windows.
+
 Dopo il riavvio, apri:
 Pannello di controllo > Suoni > Registrazione > CABLE Output
 e, se vuoi usarlo con tutte le applicazioni che rispettano i predefiniti
