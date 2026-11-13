@@ -1,0 +1,78 @@
+name: Build Windows single installer (VoiceClean + optional VB-CABLE)
+on:
+  push:
+    branches:
+      - main
+      - feature/windows-installer-vbcable
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows-installer:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure native audio applications
+        run: cmake -S . -B build -A x64
+      - name: Compile native x64 audio applications
+        run: cmake --build build --config Release
+      - name: Run unit tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Retrieve unmodified official VB-CABLE driver package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          New-Item -ItemType Directory -Force -Path "vendor\staged" | Out-Null
+          $url = 'https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack46.zip'
+          $archive = Join-Path $PWD 'vendor\VBCABLE_Driver_Pack46.zip'
+          Invoke-WebRequest -Uri $url -OutFile $archive -MaximumRedirection 5 -TimeoutSec 90
+          if ((Get-Item $archive).Length -lt 700000) {
+            throw "VB-CABLE package size not plausible."
+          }
+          Get-FileHash -Algorithm SHA256 -Path $archive | Format-List | Out-String | Write-Output
+          Expand-Archive -LiteralPath $archive -DestinationPath "vendor\unpacked" -Force
+          $setup = Get-ChildItem -Path "vendor\unpacked" -Recurse -File |
+            Where-Object { $_.Name -ieq 'VBCABLE_Setup_x64.exe' } |
+            Select-Object -First 1
+          if (-not $setup) { throw "The official VB-CABLE x64 setup was not found." }
+          Copy-Item -Path (Join-Path $setup.Directory.FullName '*') -Destination "vendor\staged" -Recurse -Force
+          Copy-Item -LiteralPath $archive -Destination "vendor\staged\VBCABLE_Driver_Pack46.zip"
+          if (-not (Test-Path 'vendor\staged\VBCABLE_Setup_x64.exe')) {
+            throw "VB-CABLE setup missing from stage directory."
+          }
+          $drivers = @(Get-ChildItem -Path 'vendor\staged' -Recurse -File -Include *.sys)
+          $inf = @(Get-ChildItem -Path 'vendor\staged' -Recurse -File -Include *.inf)
+          if ($drivers.Count -eq 0 -or $inf.Count -eq 0) {
+            throw "The vendor package must include driver binaries and installation metadata."
+          }
+          Write-Output "VB-CABLE driver package staged without modification."
+
+      - name: Install Inno Setup compiler
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $compiler = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $compiler)) {
+            choco install innosetup --yes --no-progress --limit-output
+          }
+          if (-not (Test-Path $compiler)) { throw "ISCC.exe missing after installation" }
+
+      - name: Build unified Windows installer
+        shell: pwsh
+        run: |
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' 'installer\A50VoiceClean.iss'
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup build failed." }
+          if (-not (Test-Path 'dist\A50-VoiceClean-Setup-Win10-Win11-x64.exe')) {
+            throw 'Setup executable was not produced.'
+          }
+
+      - name: Upload installer for hardware testing (not a final release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: A50-VoiceClean-Unified-Setup-Windows-x64-PREVIEW
+          path: dist/A50-VoiceClean-Setup-Win10-Win11-x64.exe
+          if-no-files-found: error
