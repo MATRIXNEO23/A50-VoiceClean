@@ -2,6 +2,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <array>
+#include <algorithm>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
