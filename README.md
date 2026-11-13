@@ -31,6 +31,16 @@ Il codice comprende due prodotti distinti:
 - Cambiare la presenza stessa di RNNoise/VAD richiede Ferma e Avvia. I cursori volume/sensibilità/voce si aggiornano live.
 - **Non è ancora una release completa** da consegnare come prodotto finito.
 
+## Nuova anteprima audio live e installer unico (ancora da collaudare sulle Astro)
+
+- **Ascolta la mia voce**: scegli ASTRO A50 Game, premi Avvia e senti la voce trasformata nelle cuffie mentre muovi i cursori; funziona anche **senza** VB-CABLE per la sola prova locale. Volume separato, inizialmente 20%. Con VB-CABLE, il segnale filtrato continua a essere disponibile alle app mentre ascolti nelle cuffie.
+- **Installer unico Windows 10/11 x64**: il workflow [Build Windows single installer](https://github.com/MATRIXNEO23/A50-VoiceClean/actions/workflows/installer.yml) produce `A50-VoiceClean-Unified-Setup-Windows-x64-PREVIEW`, contenente `A50-VoiceClean-Setup-Win10-Win11-x64.exe`. Il setup include il pacchetto originale **VB-CABLE** opzionale (donationware VB-Audio, [condizioni](https://vb-audio.com/Services/licensing.htm)), esegue la procedura di installazione **ufficiale** e può richiedere il riavvio.
+- **Disinstallazione**: da Impostazioni > App, con scelta di aprire la rimozione del driver VB-CABLE e di eliminare facoltativamente profili personali e log; per sicurezza entrambi rimangono indipendenti e non vengono eliminati automaticamente.
+- **Windows predefinito**: dopo aver installato VB-CABLE e riavviato, imposta una sola volta **CABLE Output** come dispositivo microfono predefinito e predefinito di comunicazione. Le app che scelgono un ingresso specifico potrebbero richiedere di selezionarlo manualmente.
+- **Stato di prova**: build e test CI non certificano la qualità o la latenza reale su Astro A50 e i3-2100. Non installare una seconda volta sopra una versione precedente senza prima salvare eventuali profili importanti.
+
+Maggiori dettagli: [ascolto diretto](docs/STEP_11_HEADPHONE_MONITOR.md) e [installer](docs/STEP_12_INSTALLER.md).
+
 ## Hardware di riferimento
 
 - Astro A50 Gen 4: firmware cuffie `39964.43`, firmware base `40372.43`.
