@@ -104,6 +104,36 @@ jobs:
           }
           Write-Output 'App-only installer and reversible uninstall smoke test succeeded.'
 
+          # Test full packaging WITHOUT installing the third-party driver:
+          # postinstall vendor GUI is skipped by /VERYSILENT.
+          $withVendor = Join-Path $env:RUNNER_TEMP 'A50-smoke-full'
+          $full = Start-Process -FilePath $installer -PassThru -Wait -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
+            '/COMPONENTS=app,vbcable', "/DIR=$withVendor"
+          )
+          if ($full.ExitCode -ne 0) { throw "Full package unpack failed $($full.ExitCode)" }
+          $driverSetup = Join-Path $withVendor 'ThirdParty\VB-CABLE\VBCABLE_Setup_x64.exe'
+          $driverZip = Join-Path $withVendor 'ThirdParty\VB-CABLE\VBCABLE_Driver_Pack46.zip'
+          if (-not (Test-Path $driverSetup) -or -not (Test-Path $driverZip)) {
+            throw "VB-CABLE setup and untouched vendor archive must both exist."
+          }
+          $vendorSha = (Get-FileHash -Algorithm SHA256 $driverZip).Hash.ToUpperInvariant()
+          if ($vendorSha -ne 'BC44E8974191A5A2427D6C979E2DAB08DBB09925F3F435DFA2F0BA3E45B6EB90') {
+            throw "Bundled VB-CABLE archive has unexpected hash."
+          }
+          $vendorUninstaller = Get-ChildItem -Path $withVendor -Filter 'unins*.exe' -File |
+            Select-Object -First 1
+          if (-not $vendorUninstaller) { throw 'Full package uninstaller missing.' }
+          $removeFull = Start-Process -FilePath $vendorUninstaller.FullName -PassThru -Wait -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          )
+          if ($removeFull.ExitCode -ne 0) { throw "Full package uninstall failed $($removeFull.ExitCode)" }
+          if (Test-Path (Join-Path $withVendor 'A50VoiceClean-Control.exe')) {
+            throw 'Full package left the application executable behind.'
+          }
+          Write-Output 'Full package contains verified original VB-CABLE driver and uninstalls safely.'
+
+
       - name: Upload installer for hardware testing (not a final release)
         uses: actions/upload-artifact@v4
         with:
