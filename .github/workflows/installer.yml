@@ -75,6 +75,35 @@ jobs:
             throw 'Setup executable was not produced.'
           }
 
+      - name: Smoke test app-only install and uninstall on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = (Resolve-Path 'dist\A50-VoiceClean-Setup-Win10-Win11-x64.exe').Path
+          $target = Join-Path $env:RUNNER_TEMP 'A50-smoke-install'
+          $install = Start-Process -FilePath $installer -PassThru -Wait -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/COMPONENTS=app', "/DIR=$target"
+          )
+          if ($install.ExitCode -ne 0) { throw "VoiceClean installation exited $($install.ExitCode)" }
+          if (-not (Test-Path (Join-Path $target 'A50VoiceClean-Control.exe')) -or
+              -not (Test-Path (Join-Path $target 'A50VoiceClean-Live.exe'))) {
+            throw 'The installer did not install both native VoiceClean processes.'
+          }
+          if (Test-Path (Join-Path $target 'ThirdParty\VB-CABLE\VBCABLE_Setup_x64.exe')) {
+            throw 'The unselected VB-CABLE component should not be installed in app-only mode.'
+          }
+          $uninstaller = Get-ChildItem -Path $target -Filter 'unins*.exe' -File |
+            Select-Object -First 1
+          if (-not $uninstaller) { throw 'VoiceClean uninstaller not found.' }
+          $remove = Start-Process -FilePath $uninstaller.FullName -PassThru -Wait -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          )
+          if ($remove.ExitCode -ne 0) { throw "VoiceClean uninstall exited $($remove.ExitCode)" }
+          if (Test-Path (Join-Path $target 'A50VoiceClean-Control.exe')) {
+            throw 'App executable remains after uninstall.'
+          }
+          Write-Output 'App-only installer and reversible uninstall smoke test succeeded.'
+
       - name: Upload installer for hardware testing (not a final release)
         uses: actions/upload-artifact@v4
         with:
