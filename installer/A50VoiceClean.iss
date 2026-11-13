@@ -63,12 +63,20 @@ Filename: "{app}\ThirdParty\VB-CABLE\VBCABLE_Setup_x64.exe"; Description: "Apri 
 Filename: "{app}\{#MyAppExeName}"; Description: "Avvia A50 VoiceClean"; Flags: postinstall nowait skipifsilent; Components: app
 
 [Code]
+var
+  RemovePersonalSettings: Boolean;
+
 function InitializeUninstall(): Boolean;
 var
   VendorSetup: String;
   ResultCode: Integer;
 begin
   Result := True;
+  RemovePersonalSettings :=
+    MsgBox(
+      'Vuoi eliminare anche i profili personali e i registri diagnostici di A50 VoiceClean?' + #13#10 +
+      'Scegli NO per mantenere le tue impostazioni se installerai di nuovo il programma.',
+      mbConfirmation, MB_YESNO) = IDYES;
   VendorSetup := ExpandConstant('{app}\ThirdParty\VB-CABLE\VBCABLE_Setup_x64.exe');
   if FileExists(VendorSetup) then begin
     if MsgBox(
@@ -84,5 +92,13 @@ begin
                'A50 VoiceClean verrà comunque disinstallato.',
                mbInformation, MB_OK);
     end;
+  end;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if (CurUninstallStep = usPostUninstall) and RemovePersonalSettings then begin
+    DelTree(ExpandConstant('{userappdata}\A50VoiceClean'), True, True, True);
+    DelTree(ExpandConstant('{localappdata}\A50VoiceClean'), True, True, True);
   end;
 end;
