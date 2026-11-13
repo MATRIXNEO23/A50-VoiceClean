@@ -16,12 +16,16 @@ int main() {
     values.gain_tenths=-30;
     values.voice_enabled=1;
     values.mix_milli=250;
+    values.monitor_enabled=1;
+    values.monitor_volume_milli=200;
     a50::publish(&shared,values);
     assert(a50::snapshot(&shared,snapshot,version));
     assert(version==4 && snapshot.pitch_tenths==75 &&
            snapshot.gain_tenths==-30 &&
            snapshot.voice_enabled==1 &&
-           snapshot.mix_milli==250);
+           snapshot.mix_milli==250 &&
+           snapshot.monitor_enabled==1 &&
+           snapshot.monitor_volume_milli==200);
     InterlockedExchange(&shared.meter_input_db,318);
     InterlockedExchange(&shared.meter_output_db,185);
     InterlockedExchange(&shared.voice_probability_milli,817);

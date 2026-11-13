@@ -24,7 +24,8 @@ enum : int {InputSelect=101,OutputSelect=102,Refresh=103,Start=104,Stop=105,
              DenoiseCheck=301,VadCheck=302,VoiceCheck=303,
              PitchSlider=204,ResonanceSlider=205,BassSlider=206,
              BrightnessSlider=207,MixSlider=208,
-             ProfileCombo=401,ProfileName=402,LoadProfile=403,SaveProfile=404};
+             ProfileCombo=401,ProfileName=402,LoadProfile=403,SaveProfile=404,
+             MonitorCheck=501,MonitorSelect=502,MonitorSlider=503};
 HWND window=nullptr,in_combo=nullptr,out_combo=nullptr,gain_slider=nullptr,
      probability_slider=nullptr,floor_slider=nullptr,denoise_check=nullptr,
      vad_check=nullptr,status_text=nullptr,gain_value=nullptr,
@@ -35,6 +36,8 @@ HWND pitch_value=nullptr,resonance_value=nullptr,bass_value=nullptr,
      brightness_value=nullptr,mix_value=nullptr;
 HWND profile_combo=nullptr,profile_name=nullptr;
 HWND input_meter=nullptr,output_meter=nullptr,speech_status=nullptr;
+HWND monitor_combo=nullptr,monitor_check=nullptr,monitor_slider=nullptr,monitor_value=nullptr;
+std::vector<int> monitor_output_indices;
 HFONT font=nullptr;
 PROCESS_INFORMATION process{};
 HANDLE stop_event=nullptr,job=nullptr,config_mapping=nullptr;
@@ -95,7 +98,9 @@ void populate() {
     outputs=endpoint_names(enumerator.Get(),eRender,output_ids);
     SendMessageW(in_combo,CB_RESETCONTENT,0,0);
     SendMessageW(out_combo,CB_RESETCONTENT,0,0);
-    int preferred_input=-1,preferred_output=-1;
+    SendMessageW(monitor_combo,CB_RESETCONTENT,0,0);
+    monitor_output_indices.clear();
+    int preferred_input=-1,preferred_output=-1,preferred_monitor=-1;
     for(std::size_t i=0;i<inputs.size();++i) {
         SendMessageW(in_combo,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(inputs[i].c_str()));
         auto n=lower(inputs[i]);
@@ -106,12 +111,22 @@ void populate() {
         SendMessageW(out_combo,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(outputs[i].c_str()));
         auto n=lower(outputs[i]);
         if(n.find(L"cable input")!=std::wstring::npos) preferred_output=static_cast<int>(i);
+        if(n.find(L"astro a50")!=std::wstring::npos &&
+           n.find(L"game")!=std::wstring::npos) {
+            const int ix=static_cast<int>(monitor_output_indices.size());
+            monitor_output_indices.push_back(static_cast<int>(i));
+            SendMessageW(monitor_combo,CB_ADDSTRING,0,
+                         reinterpret_cast<LPARAM>(outputs[i].c_str()));
+            preferred_monitor=ix;
+        }
     }
     if(preferred_input>=0) SendMessageW(in_combo,CB_SETCURSEL,preferred_input,0);
     else if(!inputs.empty()) SendMessageW(in_combo,CB_SETCURSEL,0,0);
     if(preferred_output>=0) SendMessageW(out_combo,CB_SETCURSEL,preferred_output,0);
-    message(preferred_output>=0?L"Microfoni caricati. Pronto per l'avvio."
-                               :L"Uscita CABLE Input non trovata: serve VB-CABLE per Jarvis.");
+    if(preferred_monitor>=0) SendMessageW(monitor_combo,CB_SETCURSEL,preferred_monitor,0);
+    if(preferred_output>=0) message(L"VB-CABLE pronto. Puoi attivare l'ascolto nelle Astro.");
+    else if(preferred_monitor>=0) message(L"Nessun VB-CABLE: puoi provare la voce solo in cuffia.");
+    else message(L"Non trovo ne VB-CABLE ne ASTRO A50 Game: controlla i dispositivi.");
 }
 int slider(HWND h) { return static_cast<int>(SendMessageW(h,TBM_GETPOS,0,0)); }
 void set_slider(HWND h,int from,int to,int initial) {
@@ -132,6 +147,9 @@ void values() {
     SetWindowTextW(brightness_value,
       (std::to_wstring(slider(brightness_slider))+L" dB").c_str());
     SetWindowTextW(mix_value,(std::to_wstring(slider(mix_slider))+L" %").c_str());
+    if(monitor_value)
+        SetWindowTextW(monitor_value,
+            (std::to_wstring(slider(monitor_slider))+L" %").c_str());
 }
 void publish_live_settings() {
     if(!shared_config) return;
@@ -145,6 +163,8 @@ void publish_live_settings() {
     v.bass_tenths=slider(bass_slider)*10;
     v.brightness_tenths=slider(brightness_slider)*10;
     v.mix_milli=slider(mix_slider)*10;
+    v.monitor_enabled=SendMessageW(monitor_check,BM_GETCHECK,0,0)==BST_CHECKED;
+    v.monitor_volume_milli=slider(monitor_slider)*10;
     a50::publish(shared_config,v);
 }
 std::filesystem::path profile_path() {
@@ -257,6 +277,8 @@ void stop_engine() {
     cleanup();
     EnableWindow(start_button,TRUE);
     EnableWindow(stop_button,FALSE);
+    EnableWindow(monitor_combo,TRUE);
+    EnableWindow(out_combo,TRUE);
     message(L"Audio arrestato. Microfono ASTRO non modificato.");
 }
 std::filesystem::path engine_executable() {
@@ -277,17 +299,33 @@ void start_engine() {
     if(running()) return;
     if(process.hProcess) cleanup();
     const auto input=static_cast<int>(SendMessageW(in_combo,CB_GETCURSEL,0,0));
-    const auto output=static_cast<int>(SendMessageW(out_combo,CB_GETCURSEL,0,0));
-    if(input<0 || output<0 || static_cast<std::size_t>(input)>=inputs.size() ||
-       static_cast<std::size_t>(output)>=outputs.size()) {
-        message(L"Seleziona microfono ASTRO e uscita VB-CABLE.");return;
+    const auto selected_output=static_cast<int>(SendMessageW(out_combo,CB_GETCURSEL,0,0));
+    const auto monitor_selection=static_cast<int>(SendMessageW(monitor_combo,CB_GETCURSEL,0,0));
+    const bool listen=SendMessageW(monitor_check,BM_GETCHECK,0,0)==BST_CHECKED;
+    if(input<0 || static_cast<std::size_t>(input)>=inputs.size()) {
+        message(L"Seleziona un microfono in ingresso.");return;
     }
-    const auto n=lower(outputs[output]);
-    if(n.find(L"cable input")==std::wstring::npos &&
-       n.find(L"vb-audio")==std::wstring::npos) {
-        message(L"Per sicurezza l'uscita deve essere una periferica audio virtuale.");
+    const bool cable_ok=selected_output>=0 &&
+         static_cast<std::size_t>(selected_output)<outputs.size() &&
+         (lower(outputs[selected_output]).find(L"cable input")!=std::wstring::npos ||
+          lower(outputs[selected_output]).find(L"vb-audio")!=std::wstring::npos);
+    const bool headset_ok=monitor_selection>=0 &&
+         static_cast<std::size_t>(monitor_selection)<monitor_output_indices.size();
+    const bool preview_only=!cable_ok;
+    if(!cable_ok && !listen) {
+        message(L"Senza VB-CABLE attiva 'Ascolta la mia voce' per la sola prova in cuffia.");
         return;
     }
+    if(listen && !headset_ok) {
+        message(L"ASTRO A50 Game non trovata tra le uscite per l'ascolto.");
+        return;
+    }
+    if(!cable_ok && !headset_ok) {
+        message(L"Per l'ascolto serve l'uscita ASTRO A50 Game.");
+        return;
+    }
+    const int headset_index=headset_ok?monitor_output_indices[monitor_selection]:-1;
+    const int output=cable_ok?selected_output:headset_index;
     try {
         const auto executable=engine_executable();
         if(!std::filesystem::exists(executable)) {
@@ -331,6 +369,10 @@ void start_engine() {
             L" --vad-prob "+std::to_wstring(slider(probability_slider)/100.0)+
             L" --voice-min-db "+std::to_wstring(slider(floor_slider))+
             L" --stop-event \""+event_name+L"\" --config-map \""+config_name+L"\"";
+        if(preview_only) args+=L" --headphone-preview";
+        else if(headset_ok) args+=L" --monitor-id \""+output_ids[headset_index]+L"\"";
+        if(listen) args+=L" --monitor-on";
+        args+=L" --monitor-volume "+std::to_wstring(slider(monitor_slider)/100.0);
         if(SendMessageW(denoise_check,BM_GETCHECK,0,0)!=BST_CHECKED) args+=L" --no-denoise";
         if(SendMessageW(vad_check,BM_GETCHECK,0,0)!=BST_CHECKED) args+=L" --no-vad";
         if(SendMessageW(voice_check,BM_GETCHECK,0,0)==BST_CHECKED) {
@@ -363,7 +405,11 @@ void start_engine() {
         }
         EnableWindow(start_button,FALSE);
         EnableWindow(stop_button,TRUE);
-        message(L"Audio live avviato. In Jarvis scegli CABLE Output come microfono.");
+        EnableWindow(monitor_combo,FALSE);
+        EnableWindow(out_combo,FALSE);
+        message(preview_only
+            ? L"Ascolto ASTRO attivo: parla e sposta i cursori. Jarvis non riceve l'audio filtrato."
+            : L"VB-CABLE attivo: l'ascolto cuffie si regola in diretta. Jarvis usa CABLE Output.");
     } catch(const std::exception&) {
         if(process.hProcess) stop_engine();
         else cleanup();
@@ -439,7 +485,22 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         control(L"BUTTON",L"Salva",BS_PUSHBUTTON,843,483,105,29,SaveProfile);
         try{refresh_profiles();}catch(...){message(L"Errore lettura profili.");}
         control(L"STATIC",L"Cursori regolabili in diretta. RNNoise/VAD richiedono riavvio. Velocita live invariata.",0,20,528,955,22);
-        status_text=control(L"STATIC",L"Caricamento dispositivi...",0,20,557,955,35);
+        status_text=control(L"STATIC",L"Caricamento dispositivi...",0,20,556,955,34);
+        control(L"STATIC",L"ASCOLTO DELLA VOCE MODIFICATA (ASTRO A50)",0,20,599,810,21);
+        monitor_check=control(L"BUTTON",L"Ascolta la mia voce",BS_AUTOCHECKBOX,
+                              20,628,225,25,MonitorCheck);
+        SendMessageW(monitor_check,BM_SETCHECK,BST_CHECKED,0);
+        control(L"STATIC",L"Uscita cuffie",0,257,634,100,18);
+        monitor_combo=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,
+                              360,627,565,200,MonitorSelect);
+        control(L"STATIC",L"Volume ascolto",0,20,671,145,18);
+        monitor_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,
+                               168,662,310,34,MonitorSlider);
+        monitor_value=control(L"STATIC",L"20 %",0,487,669,80,19);
+        control(L"STATIC",L"Parti a volume basso. Disattiva l'eventuale sidetone Astro per sentire solo il filtro.",
+                0,20,704,950,20);
+        set_slider(monitor_slider,0,100,20);
+        values();
         try {populate();} catch(...) {message(L"Impossibile leggere i dispositivi audio.");}
         SetTimer(h,1,100,nullptr);
         return 0;
@@ -451,6 +512,18 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         case Start: start_engine();return 0;
         case Stop: stop_engine();return 0;
         case VoiceCheck: publish_live_settings();return 0;
+        case MonitorCheck:
+            if(SendMessageW(monitor_check,BM_GETCHECK,0,0)==BST_CHECKED &&
+               SendMessageW(monitor_combo,CB_GETCURSEL,0,0)==CB_ERR) {
+                SendMessageW(monitor_check,BM_SETCHECK,BST_UNCHECKED,0);
+                message(L"Per ascoltare serve ASTRO A50 Game collegata.");
+            } else if(running()) {
+                message(L"Ascolto cuffie attivato/disattivato in diretta.");
+            }
+            publish_live_settings();return 0;
+        case MonitorSelect:
+            if(running()) message(L"Ferma il flusso per cambiare l'uscita cuffie.");
+            return 0;
         case LoadProfile: load_selected_profile();return 0;
         case SaveProfile: save_current_profile();return 0;
         case DenoiseCheck: case VadCheck:
@@ -472,6 +545,7 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
             DWORD code=0;GetExitCodeProcess(process.hProcess,&code);
             cleanup();
             EnableWindow(start_button,TRUE);EnableWindow(stop_button,FALSE);
+            EnableWindow(monitor_combo,TRUE);EnableWindow(out_combo,TRUE);
             message(L"Pipeline terminata (codice "+std::to_wstring(code)+
                     L"). Diagnostica: %LOCALAPPDATA%\\A50VoiceClean\\live.log");
         }
@@ -495,7 +569,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show) {
     RegisterClassExW(&wc);
     HWND h=CreateWindowExW(0,wc.lpszClassName,L"A50 VoiceClean - Live",
         WS_OVERLAPPEDWINDOW&~WS_THICKFRAME,
-        CW_USEDEFAULT,CW_USEDEFAULT,1035,651,
+        CW_USEDEFAULT,CW_USEDEFAULT,1035,794,
         nullptr,nullptr,instance,nullptr);
     if(!h) {CoUninitialize();return 1;}
     ShowWindow(h,show);UpdateWindow(h);
