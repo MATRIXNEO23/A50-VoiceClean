@@ -20,6 +20,8 @@ struct LiveShared {
     volatile LONG mix_milli;
     volatile LONG monitor_enabled;
     volatile LONG monitor_volume_milli;
+    volatile LONG clarity_enabled;
+    volatile LONG denoise_strength_milli;
     // Audio-process diagnostics are written independently of GUI config version.
     volatile LONG meter_input_db;   // 0..1000, maps -70..0 dBFS
     volatile LONG meter_output_db;  // 0..1000, maps -70..0 dBFS
@@ -37,6 +39,8 @@ struct LiveValues {
     LONG mix_milli=1000;
     LONG monitor_enabled=0;
     LONG monitor_volume_milli=350;
+    LONG clarity_enabled=1;
+    LONG denoise_strength_milli=800;
 };
 inline LONG read_atomic(volatile LONG* p) {
     return InterlockedCompareExchange(p,0,0);
@@ -54,6 +58,8 @@ inline void publish(LiveShared* s,const LiveValues& v) {
     InterlockedExchange(&s->mix_milli,v.mix_milli);
     InterlockedExchange(&s->monitor_enabled,v.monitor_enabled);
     InterlockedExchange(&s->monitor_volume_milli,v.monitor_volume_milli);
+    InterlockedExchange(&s->clarity_enabled,v.clarity_enabled);
+    InterlockedExchange(&s->denoise_strength_milli,v.denoise_strength_milli);
     InterlockedIncrement(&s->sequence); // even: consistent snapshot
 }
 inline bool snapshot(LiveShared* s, LiveValues& out, LONG& version) {
@@ -72,6 +78,8 @@ inline bool snapshot(LiveShared* s, LiveValues& out, LONG& version) {
         current.mix_milli=read_atomic(&s->mix_milli);
         current.monitor_enabled=read_atomic(&s->monitor_enabled);
         current.monitor_volume_milli=read_atomic(&s->monitor_volume_milli);
+        current.clarity_enabled=read_atomic(&s->clarity_enabled);
+        current.denoise_strength_milli=read_atomic(&s->denoise_strength_milli);
         const LONG after=read_atomic(&s->sequence);
         if(before==after && !(after&1)) {
             out=current;
