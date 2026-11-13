@@ -45,6 +45,53 @@ PROCESS_INFORMATION process{};
 HANDLE stop_event=nullptr,job=nullptr,config_mapping=nullptr;
 a50::LiveShared* shared_config=nullptr;
 std::vector<std::wstring> inputs,outputs,input_ids,output_ids;
+// Fixed logical control layout with scrollable viewport for 720p/low-DPI screens.
+constexpr int layout_width=1020,layout_height=752;
+int scroll_x=0,scroll_y=0;
+void adjust_scrollbars(HWND h) {
+    RECT r{};GetClientRect(h,&r);
+    SCROLLINFO si{};si.cbSize=sizeof(si);
+    si.fMask=SIF_RANGE|SIF_PAGE|SIF_POS;si.nMin=0;
+    si.nMax=layout_width-1;si.nPage=static_cast<UINT>(std::max(1L,r.right-r.left));
+    si.nPos=scroll_x;
+    SetScrollInfo(h,SB_HORZ,&si,TRUE);
+    si.fMask=SIF_POS;GetScrollInfo(h,SB_HORZ,&si);
+    const int new_x=si.nPos;
+    si.fMask=SIF_RANGE|SIF_PAGE|SIF_POS;si.nMin=0;
+    si.nMax=layout_height-1;si.nPage=static_cast<UINT>(std::max(1L,r.bottom-r.top));
+    si.nPos=scroll_y;
+    SetScrollInfo(h,SB_VERT,&si,TRUE);
+    si.fMask=SIF_POS;GetScrollInfo(h,SB_VERT,&si);
+    const int new_y=si.nPos;
+    if(new_x!=scroll_x || new_y!=scroll_y)
+        ScrollWindowEx(h,scroll_x-new_x,scroll_y-new_y,nullptr,nullptr,
+                       nullptr,nullptr,SW_SCROLLCHILDREN|SW_INVALIDATE|SW_ERASE);
+    scroll_x=new_x;scroll_y=new_y;
+}
+void scroll_page(HWND h,int bar,WPARAM w) {
+    SCROLLINFO si{};si.cbSize=sizeof(si);si.fMask=SIF_ALL;
+    if(!GetScrollInfo(h,bar,&si))return;
+    const int old=si.nPos;
+    switch(LOWORD(w)) {
+    case SB_LINEUP:si.nPos-=24;break;
+    case SB_LINEDOWN:si.nPos+=24;break;
+    case SB_PAGEUP:si.nPos-=static_cast<int>(si.nPage);break;
+    case SB_PAGEDOWN:si.nPos+=static_cast<int>(si.nPage);break;
+    case SB_THUMBTRACK:case SB_THUMBPOSITION:si.nPos=si.nTrackPos;break;
+    case SB_TOP:si.nPos=si.nMin;break;
+    case SB_BOTTOM:si.nPos=si.nMax;break;
+    default:return;
+    }
+    si.fMask=SIF_POS;SetScrollInfo(h,bar,&si,TRUE);
+    GetScrollInfo(h,bar,&si);
+    if(si.nPos!=old) {
+        const int shift=old-si.nPos;
+        ScrollWindowEx(h,bar==SB_HORZ?shift:0,bar==SB_VERT?shift:0,
+                       nullptr,nullptr,nullptr,nullptr,
+                       SW_SCROLLCHILDREN|SW_INVALIDATE|SW_ERASE);
+        if(bar==SB_HORZ)scroll_x=si.nPos;else scroll_y=si.nPos;
+    }
+}
 
 void check(HRESULT hr,const char* op) {
     if(FAILED(hr)) throw std::runtime_error(op);
@@ -525,7 +572,18 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         SetTimer(h,1,100,nullptr);
         return 0;
     }
-    case WM_HSCROLL: values();publish_live_settings();return 0;
+    case WM_SIZE:adjust_scrollbars(h);return 0;
+    case WM_VSCROLL:if(!l)scroll_page(h,SB_VERT,w);return 0;
+    case WM_HSCROLL:
+        if(!l)scroll_page(h,SB_HORZ,w);
+        else {values();publish_live_settings();}
+        return 0;
+    case WM_MOUSEWHEEL: {
+        const int ticks=GET_WHEEL_DELTA_WPARAM(w)/WHEEL_DELTA;
+        for(int i=0;i<std::abs(ticks)*3;++i)
+            scroll_page(h,SB_VERT,MAKEWPARAM(ticks>0?SB_LINEUP:SB_LINEDOWN,0));
+        return 0;
+    }
     case WM_COMMAND:
         switch(LOWORD(w)) {
         case Refresh: if(!running()){try{populate();}catch(...){message(L"Errore lettura dispositivi.");}}return 0;
@@ -587,9 +645,13 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show) {
     wc.hCursor=LoadCursor(nullptr,IDC_ARROW);
     wc.hbrBackground=reinterpret_cast<HBRUSH>(COLOR_WINDOW+1);
     RegisterClassExW(&wc);
+    RECT desktop{};
+    SystemParametersInfoW(SPI_GETWORKAREA,0,&desktop,0);
+    const int initial_width=std::min(1035,std::max(450,desktop.right-desktop.left));
+    const int initial_height=std::min(794,std::max(400,desktop.bottom-desktop.top));
     HWND h=CreateWindowExW(0,wc.lpszClassName,L"A50 VoiceClean - Live",
-        WS_OVERLAPPEDWINDOW&~WS_THICKFRAME,
-        CW_USEDEFAULT,CW_USEDEFAULT,1035,794,
+        WS_OVERLAPPEDWINDOW|WS_HSCROLL|WS_VSCROLL,
+        CW_USEDEFAULT,CW_USEDEFAULT,initial_width,initial_height,
         nullptr,nullptr,instance,nullptr);
     if(!h) {CoUninitialize();return 1;}
     ShowWindow(h,show);UpdateWindow(h);
