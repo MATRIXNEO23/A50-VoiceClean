@@ -72,6 +72,11 @@ var
   ResultCode: Integer;
 begin
   Result := True;
+  // Automated/unattended uninstall must never remove third-party drivers or user profiles.
+  if UninstallSilent then begin
+    RemovePersonalSettings := False;
+    Exit;
+  end;
   RemovePersonalSettings :=
     MsgBox(
       'Vuoi eliminare anche i profili personali e i registri diagnostici di A50 VoiceClean?' + #13#10 +
