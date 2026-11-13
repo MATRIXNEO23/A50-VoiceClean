@@ -25,7 +25,8 @@ enum : int {InputSelect=101,OutputSelect=102,Refresh=103,Start=104,Stop=105,
              PitchSlider=204,ResonanceSlider=205,BassSlider=206,
              BrightnessSlider=207,MixSlider=208,
              ProfileCombo=401,ProfileName=402,LoadProfile=403,SaveProfile=404,
-             MonitorCheck=501,MonitorSelect=502,MonitorSlider=503};
+             MonitorCheck=501,MonitorSelect=502,MonitorSlider=503,
+             ClarityCheck=504,DenoiseStrengthSlider=505};
 HWND window=nullptr,in_combo=nullptr,out_combo=nullptr,gain_slider=nullptr,
      probability_slider=nullptr,floor_slider=nullptr,denoise_check=nullptr,
      vad_check=nullptr,status_text=nullptr,gain_value=nullptr,
@@ -37,6 +38,7 @@ HWND pitch_value=nullptr,resonance_value=nullptr,bass_value=nullptr,
 HWND profile_combo=nullptr,profile_name=nullptr;
 HWND input_meter=nullptr,output_meter=nullptr,speech_status=nullptr;
 HWND monitor_combo=nullptr,monitor_check=nullptr,monitor_slider=nullptr,monitor_value=nullptr;
+HWND clarity_check=nullptr,denoise_strength_slider=nullptr,denoise_strength_value=nullptr;
 std::vector<int> monitor_output_indices;
 HFONT font=nullptr;
 PROCESS_INFORMATION process{};
@@ -150,6 +152,9 @@ void values() {
     if(monitor_value)
         SetWindowTextW(monitor_value,
             (std::to_wstring(slider(monitor_slider))+L" %").c_str());
+    if(denoise_strength_value)
+        SetWindowTextW(denoise_strength_value,
+            (std::to_wstring(slider(denoise_strength_slider))+L" %").c_str());
 }
 void publish_live_settings() {
     if(!shared_config) return;
@@ -165,6 +170,8 @@ void publish_live_settings() {
     v.mix_milli=slider(mix_slider)*10;
     v.monitor_enabled=SendMessageW(monitor_check,BM_GETCHECK,0,0)==BST_CHECKED;
     v.monitor_volume_milli=slider(monitor_slider)*10;
+    v.clarity_enabled=SendMessageW(clarity_check,BM_GETCHECK,0,0)==BST_CHECKED;
+    v.denoise_strength_milli=slider(denoise_strength_slider)*10;
     a50::publish(shared_config,v);
 }
 std::filesystem::path profile_path() {
@@ -186,6 +193,8 @@ a50::StoredProfile current_profile() {
     p.denoise=SendMessageW(denoise_check,BM_GETCHECK,0,0)==BST_CHECKED;
     p.vad=SendMessageW(vad_check,BM_GETCHECK,0,0)==BST_CHECKED;
     p.voice=SendMessageW(voice_check,BM_GETCHECK,0,0)==BST_CHECKED;
+    p.clarity=SendMessageW(clarity_check,BM_GETCHECK,0,0)==BST_CHECKED;
+    p.denoise_strength=slider(denoise_strength_slider);
     return p;
 }
 void apply_profile(const a50::StoredProfile& p) {
@@ -197,6 +206,9 @@ void apply_profile(const a50::StoredProfile& p) {
     SendMessageW(denoise_check,BM_SETCHECK,p.denoise?BST_CHECKED:BST_UNCHECKED,0);
     SendMessageW(vad_check,BM_SETCHECK,p.vad?BST_CHECKED:BST_UNCHECKED,0);
     SendMessageW(voice_check,BM_SETCHECK,p.voice?BST_CHECKED:BST_UNCHECKED,0);
+    SendMessageW(clarity_check,BM_SETCHECK,p.clarity?BST_CHECKED:BST_UNCHECKED,0);
+    SendMessageW(denoise_strength_slider,TBM_SETPOS,TRUE,
+                 std::clamp(p.denoise_strength,0,100));
     values();publish_live_settings();
 }
 void refresh_profiles() {
@@ -447,10 +459,18 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         denoise_check=control(L"BUTTON",L"RNNoise (pulizia)",BS_AUTOCHECKBOX,20,423,185,24,DenoiseCheck);
         vad_check=control(L"BUTTON",L"Attiva solo con voce (VAD)",BS_AUTOCHECKBOX,245,423,255,24,VadCheck);
         SendMessageW(denoise_check,BM_SETCHECK,BST_CHECKED,0);
-        SendMessageW(vad_check,BM_SETCHECK,BST_CHECKED,0);
+        SendMessageW(vad_check,BM_SETCHECK,BST_UNCHECKED,0);
         set_slider(gain_slider,-12,24,0);
         set_slider(probability_slider,20,95,65);
         set_slider(floor_slider,-80,-20,-46);
+        clarity_check=control(L"BUTTON",L"Parlato piano: piu chiaro",BS_AUTOCHECKBOX,
+                              20,450,240,26,ClarityCheck);
+        SendMessageW(clarity_check,BM_SETCHECK,BST_CHECKED,0);
+        control(L"STATIC",L"Pulizia RNNoise",0,275,455,125,18);
+        denoise_strength_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,
+                                       403,443,143,35,DenoiseStrengthSlider);
+        denoise_strength_value=control(L"STATIC",L"80 %",0,555,455,62,19);
+        set_slider(denoise_strength_slider,0,100,80);
 
         control(L"STATIC",L"Modificatore vocale leggero (sperimentale)",0,624,202,380,24);
         voice_check=control(L"BUTTON",L"Attiva trasformazione",BS_AUTOCHECKBOX,624,232,245,22,VoiceCheck);
@@ -511,7 +531,7 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         case Refresh: if(!running()){try{populate();}catch(...){message(L"Errore lettura dispositivi.");}}return 0;
         case Start: start_engine();return 0;
         case Stop: stop_engine();return 0;
-        case VoiceCheck: publish_live_settings();return 0;
+        case VoiceCheck: case ClarityCheck: publish_live_settings();return 0;
         case MonitorCheck:
             if(SendMessageW(monitor_check,BM_GETCHECK,0,0)==BST_CHECKED &&
                SendMessageW(monitor_combo,CB_GETCURSEL,0,0)==CB_ERR) {
