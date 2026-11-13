@@ -33,7 +33,12 @@ jobs:
           if ((Get-Item $archive).Length -lt 700000) {
             throw "VB-CABLE package size not plausible."
           }
-          Get-FileHash -Algorithm SHA256 -Path $archive | Format-List | Out-String | Write-Output
+          $actualSha = (Get-FileHash -Algorithm SHA256 -Path $archive).Hash.ToUpperInvariant()
+          $expectedSha = 'BC44E8974191A5A2427D6C979E2DAB08DBB09925F3F435DFA2F0BA3E45B6EB90'
+          if ($actualSha -ne $expectedSha) {
+            throw "Official VB-CABLE Pack46 SHA256 mismatch. Refusing to bundle changed vendor payload."
+          }
+          Write-Output "Pinned VB-CABLE Pack46 verified: $actualSha"
           Expand-Archive -LiteralPath $archive -DestinationPath "vendor\unpacked" -Force
           $setup = Get-ChildItem -Path "vendor\unpacked" -Recurse -File |
             Where-Object { $_.Name -ieq 'VBCABLE_Setup_x64.exe' } |
