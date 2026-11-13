@@ -648,8 +648,10 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show) {
     RegisterClassExW(&wc);
     RECT desktop{};
     SystemParametersInfoW(SPI_GETWORKAREA,0,&desktop,0);
-    const int initial_width=std::min(1035,std::max(450,desktop.right-desktop.left));
-    const int initial_height=std::min(794,std::max(400,desktop.bottom-desktop.top));
+    const int usable_width=static_cast<int>(desktop.right-desktop.left);
+    const int usable_height=static_cast<int>(desktop.bottom-desktop.top);
+    const int initial_width=std::min(1035,std::max(450,usable_width));
+    const int initial_height=std::min(794,std::max(400,usable_height));
     HWND h=CreateWindowExW(0,wc.lpszClassName,L"A50 VoiceClean - Live",
         WS_OVERLAPPEDWINDOW|WS_HSCROLL|WS_VSCROLL,
         CW_USEDEFAULT,CW_USEDEFAULT,initial_width,initial_height,
