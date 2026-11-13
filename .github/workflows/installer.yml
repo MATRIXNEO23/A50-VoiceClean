@@ -1,0 +1,142 @@
+name: Build Windows single installer (VoiceClean + optional VB-CABLE)
+on:
+  push:
+    branches:
+      - main
+      - feature/windows-installer-vbcable
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows-installer:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure native audio applications
+        run: cmake -S . -B build -A x64
+      - name: Compile native x64 audio applications
+        run: cmake --build build --config Release
+      - name: Run unit tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Retrieve unmodified official VB-CABLE driver package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          New-Item -ItemType Directory -Force -Path "vendor\staged" | Out-Null
+          $url = 'https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack46.zip'
+          $archive = Join-Path $PWD 'vendor\VBCABLE_Driver_Pack46.zip'
+          Invoke-WebRequest -Uri $url -OutFile $archive -MaximumRedirection 5 -TimeoutSec 90
+          if ((Get-Item $archive).Length -lt 700000) {
+            throw "VB-CABLE package size not plausible."
+          }
+          $actualSha = (Get-FileHash -Algorithm SHA256 -Path $archive).Hash.ToUpperInvariant()
+          $expectedSha = 'BC44E8974191A5A2427D6C979E2DAB08DBB09925F3F435DFA2F0BA3E45B6EB90'
+          if ($actualSha -ne $expectedSha) {
+            throw "Official VB-CABLE Pack46 SHA256 mismatch. Refusing to bundle changed vendor payload."
+          }
+          Write-Output "Pinned VB-CABLE Pack46 verified: $actualSha"
+          Expand-Archive -LiteralPath $archive -DestinationPath "vendor\unpacked" -Force
+          $setup = Get-ChildItem -Path "vendor\unpacked" -Recurse -File |
+            Where-Object { $_.Name -ieq 'VBCABLE_Setup_x64.exe' } |
+            Select-Object -First 1
+          if (-not $setup) { throw "The official VB-CABLE x64 setup was not found." }
+          Copy-Item -Path (Join-Path $setup.Directory.FullName '*') -Destination "vendor\staged" -Recurse -Force
+          Copy-Item -LiteralPath $archive -Destination "vendor\staged\VBCABLE_Driver_Pack46.zip"
+          if (-not (Test-Path 'vendor\staged\VBCABLE_Setup_x64.exe')) {
+            throw "VB-CABLE setup missing from stage directory."
+          }
+          $drivers = @(Get-ChildItem -Path 'vendor\staged' -Recurse -File -Include *.sys)
+          $inf = @(Get-ChildItem -Path 'vendor\staged' -Recurse -File -Include *.inf)
+          if ($drivers.Count -eq 0 -or $inf.Count -eq 0) {
+            throw "The vendor package must include driver binaries and installation metadata."
+          }
+          Write-Output "VB-CABLE driver package staged without modification."
+
+      - name: Install Inno Setup compiler
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $compiler = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $compiler)) {
+            choco install innosetup --yes --no-progress --limit-output
+          }
+          if (-not (Test-Path $compiler)) { throw "ISCC.exe missing after installation" }
+
+      - name: Build unified Windows installer
+        shell: pwsh
+        run: |
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' 'installer\A50VoiceClean.iss'
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup build failed." }
+          if (-not (Test-Path 'dist\A50-VoiceClean-Setup-Win10-Win11-x64.exe')) {
+            throw 'Setup executable was not produced.'
+          }
+
+      - name: Smoke test app-only install and uninstall on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = (Resolve-Path 'dist\A50-VoiceClean-Setup-Win10-Win11-x64.exe').Path
+          $target = Join-Path $env:RUNNER_TEMP 'A50-smoke-install'
+          $install = Start-Process -FilePath $installer -PassThru -Wait -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/COMPONENTS=app', "/DIR=$target"
+          )
+          if ($install.ExitCode -ne 0) { throw "VoiceClean installation exited $($install.ExitCode)" }
+          if (-not (Test-Path (Join-Path $target 'A50VoiceClean-Control.exe')) -or
+              -not (Test-Path (Join-Path $target 'A50VoiceClean-Live.exe'))) {
+            throw 'The installer did not install both native VoiceClean processes.'
+          }
+          if (Test-Path (Join-Path $target 'ThirdParty\VB-CABLE\VBCABLE_Setup_x64.exe')) {
+            throw 'The unselected VB-CABLE component should not be installed in app-only mode.'
+          }
+          $uninstaller = Get-ChildItem -Path $target -Filter 'unins*.exe' -File |
+            Select-Object -First 1
+          if (-not $uninstaller) { throw 'VoiceClean uninstaller not found.' }
+          $remove = Start-Process -FilePath $uninstaller.FullName -PassThru -Wait -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          )
+          if ($remove.ExitCode -ne 0) { throw "VoiceClean uninstall exited $($remove.ExitCode)" }
+          if (Test-Path (Join-Path $target 'A50VoiceClean-Control.exe')) {
+            throw 'App executable remains after uninstall.'
+          }
+          Write-Output 'App-only installer and reversible uninstall smoke test succeeded.'
+
+          # Test full packaging WITHOUT installing the third-party driver:
+          # postinstall vendor GUI is skipped by /VERYSILENT.
+          $withVendor = Join-Path $env:RUNNER_TEMP 'A50-smoke-full'
+          $full = Start-Process -FilePath $installer -PassThru -Wait -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
+            '/COMPONENTS=app,vbcable', "/DIR=$withVendor"
+          )
+          if ($full.ExitCode -ne 0) { throw "Full package unpack failed $($full.ExitCode)" }
+          $driverSetup = Join-Path $withVendor 'ThirdParty\VB-CABLE\VBCABLE_Setup_x64.exe'
+          $driverZip = Join-Path $withVendor 'ThirdParty\VB-CABLE\VBCABLE_Driver_Pack46.zip'
+          if (-not (Test-Path $driverSetup) -or -not (Test-Path $driverZip)) {
+            throw "VB-CABLE setup and untouched vendor archive must both exist."
+          }
+          $vendorSha = (Get-FileHash -Algorithm SHA256 $driverZip).Hash.ToUpperInvariant()
+          if ($vendorSha -ne 'BC44E8974191A5A2427D6C979E2DAB08DBB09925F3F435DFA2F0BA3E45B6EB90') {
+            throw "Bundled VB-CABLE archive has unexpected hash."
+          }
+          $vendorUninstaller = Get-ChildItem -Path $withVendor -Filter 'unins*.exe' -File |
+            Select-Object -First 1
+          if (-not $vendorUninstaller) { throw 'Full package uninstaller missing.' }
+          $removeFull = Start-Process -FilePath $vendorUninstaller.FullName -PassThru -Wait -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          )
+          if ($removeFull.ExitCode -ne 0) { throw "Full package uninstall failed $($removeFull.ExitCode)" }
+          if (Test-Path (Join-Path $withVendor 'A50VoiceClean-Control.exe')) {
+            throw 'Full package left the application executable behind.'
+          }
+          Write-Output 'Full package contains verified original VB-CABLE driver and uninstalls safely.'
+
+
+      - name: Upload installer for hardware testing (not a final release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: A50-VoiceClean-Unified-Setup-Windows-x64-PREVIEW
+          path: dist/A50-VoiceClean-Setup-Win10-Win11-x64.exe
+          if-no-files-found: error
