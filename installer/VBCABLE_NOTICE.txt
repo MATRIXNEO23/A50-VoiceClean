@@ -1,0 +1,29 @@
+AVVISO IMPORTANTE — COMPONENTE AUDIO DI TERZE PARTI
+
+A50 VoiceClean è un programma separato da VB-CABLE.
+
+VB-CABLE è software audio del produttore VB-Audio Software (Vincent Burel).
+Sito originale: https://vb-cable.com/
+VB-CABLE è distribuito secondo il modello DONATIONWARE: ogni contributo
+facoltativo è gradito al produttore. Per utilizzi professionali valgono
+le relative condizioni di licenza: https://vb-audio.com/Services/licensing.htm
+
+Il driver rimane un componente riconoscibile di VB-Audio, viene
+distribuito senza modifiche e la sua installazione viene eseguita tramite
+il programma di installazione ufficiale VBCABLE_Setup_x64.exe.
+
+Per completare l'installazione o la rimozione del driver, Windows può
+richiedere autorizzazioni di amministratore e un RIAVVIO.
+
+Dopo il riavvio, apri:
+Pannello di controllo > Suoni > Registrazione > CABLE Output
+e, se vuoi usarlo con tutte le applicazioni che rispettano i predefiniti
+Windows, impostalo come dispositivo predefinito e predefinito di comunicazione.
+
+A50 VoiceClean non modifica i driver firmware Astro.
+Se rimuovi A50 VoiceClean, puoi scegliere separatamente se mantenere
+VB-CABLE per altre applicazioni.
+
+QUESTA È UNA VERSIONE PREVIEW DA COLLAUDARE CON LE ASTRO A50 REALI.
+La qualità della voce femminile e il carico CPU sul PC di destinazione
+non sono ancora stati misurati.
