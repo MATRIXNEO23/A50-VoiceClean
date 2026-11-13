@@ -16,7 +16,7 @@ Il driver non è un modulo di Jarvis, Lumi o VoiceClean: appare in Windows come 
 2. La componente **VB-CABLE** si può deselezionare (se è già installata o se vuoi solo ascoltare la voce nelle Astro).
 3. Se scegli VB-CABLE, l'installer apre **il programma ufficiale VB-Audio** con autorizzazioni amministratore: clicca **Install Driver** e riavvia Windows quando richiesto. Non forza un'installazione non autorizzata o senza conferma.
 4. Dopo il riavvio, per l'utilizzo con tutte le app che usano il microfono predefinito di Windows: apri `mmsys.cpl` dal collegamento «Audio Windows» e imposta **CABLE Output** come dispositivo predefinito e di comunicazione. L'app invia la voce filtrata a **CABLE Input**.
-5. La disinstallazione di VoiceClean è disponibile in Impostazioni > App. Alla rimozione, puoi **mantenere** VB-CABLE per altri programmi oppure aprire il suo installer ufficiale per scegliere **Remove Driver** e riavviare. I profili salvati in AppData sono conservati per evitare perdite accidentali.
+5. La disinstallazione di VoiceClean è disponibile in Impostazioni > App. Alla rimozione, puoi **mantenere** VB-CABLE per altri programmi oppure aprire il suo installer ufficiale per scegliere **Remove Driver** e riavviare. I profili salvati in AppData vengono **conservati per impostazione predefinita**, ma il programma di disinstallazione offre una scelta esplicita per eliminare anche profili e log.
 
 ## Limiti
 
@@ -26,7 +26,8 @@ Questa è una **build di prova**. Servono test di installazione, aggiornamento, 
 
 ## Collaudo
 - [ ] GitHub Actions Windows: test e compilazione dell'installer Inno Setup.
-- [ ] Verificare integrità e firma del pacchetto VB-CABLE incluso.
+- [x] Il pacchetto originale VB-CABLE Pack46 viene verificato con SHA-256 fissato (BC44E8974191A5A2427D6C979E2DAB08DBB09925F3F435DFA2F0BA3E45B6EB90).
+- [ ] Verificare la firma del driver durante l’installazione reale su Windows 10/11.
 - [ ] Windows 10 x64, Windows 11 x64: installazione e rimozione senza alterare driver Astro.
 - [ ] Riavvio del PC dopo gestione del driver.
 - [ ] VoiceClean ascolto live con e senza VB-CABLE.
