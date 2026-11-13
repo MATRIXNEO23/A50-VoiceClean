@@ -59,12 +59,71 @@ Name: "{autodesktop}\A50 VoiceClean"; Filename: "{app}\{#MyAppExeName}"; Tasks: 
 Name: "desktopicon"; Description: "Crea collegamento sul desktop"; GroupDescription: "Collegamenti:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\ThirdParty\VB-CABLE\VBCABLE_Setup_x64.exe"; Description: "Apri installazione ufficiale VB-CABLE (admin, poi riavvia Windows)"; WorkingDir: "{app}\ThirdParty\VB-CABLE"; Flags: postinstall skipifsilent; Components: vbcable
+Filename: "{app}\ThirdParty\VB-CABLE\VBCABLE_Setup_x64.exe"; Description: "Apri installazione ufficiale VB-CABLE (admin, poi riavvia Windows)"; WorkingDir: "{app}\ThirdParty\VB-CABLE"; Flags: postinstall skipifsilent; Components: vbcable; Check: ShouldLaunchVendorSetup
 Filename: "{app}\{#MyAppExeName}"; Description: "Avvia A50 VoiceClean"; Flags: postinstall nowait skipifsilent; Components: app
 
 [Code]
 var
   RemovePersonalSettings: Boolean;
+
+// Look for the VB-Audio PnP driver, not just a particular endpoint name.
+// A user can rename the Windows CABLE Input/Output endpoint labels.
+// Return false if WMI is unavailable; never launch a vendor setup on a guess.
+function DetectInstalledVBCable(var Installed: Boolean): Boolean;
+var
+  Locator, WmiService, Devices: Variant;
+begin
+  Installed := False;
+  Result := False;
+  try
+    Locator := CreateOleObject('WbemScripting.SWbemLocator');
+    WmiService := Locator.ConnectServer('.', 'root\CIMV2');
+    Devices := WmiService.ExecQuery(
+      'SELECT Name FROM Win32_PnPEntity WHERE Name LIKE ''%VB-Audio Virtual Cable%''');
+    Installed := Devices.Count > 0;
+    Result := True;
+  except
+    Log('Impossibile verificare il driver VB-CABLE tramite WMI.');
+  end;
+end;
+
+procedure InitializeWizard();
+var
+  Installed, DetectionOK: Boolean;
+begin
+  DetectionOK := DetectInstalledVBCable(Installed);
+  if DetectionOK and Installed then begin
+    // The application does not require a second installation of the driver.
+    WizardSelectComponents('!vbcable');
+    if not WizardSilent then
+      MsgBox('VB-CABLE e'' gia'' installato in Windows.' + #13#10 +
+             'VoiceClean riutilizzera'' il driver senza reinstallarlo.' + #13#10 +
+             'L''uscita audio normale deve rimanere sulle cuffie ASTRO A50 Game.',
+             mbInformation, MB_OK);
+  end else if not DetectionOK then begin
+    // Fail safe when Windows cannot report driver state.
+    WizardSelectComponents('!vbcable');
+    if not WizardSilent then
+      MsgBox('Impossibile verificare se VB-CABLE e'' gia'' installato.' + #13#10 +
+             'Per sicurezza l''avvio automatico del setup driver e'' disabilitato.' + #13#10 +
+             'Puoi gestirlo manualmente dal pacchetto ufficiale VB-Audio.',
+             mbInformation, MB_OK);
+  end;
+end;
+
+function ShouldLaunchVendorSetup(): Boolean;
+var
+  Installed, DetectionOK: Boolean;
+begin
+  // Recheck immediately before execution to prevent reinstalling a driver
+  // that was installed after the first wizard screen.
+  DetectionOK := DetectInstalledVBCable(Installed);
+  Result := DetectionOK and not Installed;
+  if not DetectionOK then
+    Log('Setup VB-CABLE non avviato: stato driver non verificabile.')
+  else if Installed then
+    Log('Setup VB-CABLE non avviato: driver gia'' presente.');
+end;
 
 function InitializeUninstall(): Boolean;
 var
