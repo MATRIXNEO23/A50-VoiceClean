@@ -94,20 +94,24 @@ begin
   DetectionOK := DetectInstalledVBCable(Installed);
   if DetectionOK and Installed then begin
     // The application does not require a second installation of the driver.
-    WizardSelectComponents('!vbcable');
-    if not WizardSilent then
+    // In silent packaging-only mode, keep explicit /COMPONENTS selections
+    // so CI can inspect the vendor payload; [Run] is still suppressed.
+    if not WizardSilent then begin
+      WizardSelectComponents('!vbcable');
       MsgBox('VB-CABLE e'' gia'' installato in Windows.' + #13#10 +
              'VoiceClean riutilizzera'' il driver senza reinstallarlo.' + #13#10 +
              'L''uscita audio normale deve rimanere sulle cuffie ASTRO A50 Game.',
              mbInformation, MB_OK);
+    end;
   end else if not DetectionOK then begin
     // Fail safe when Windows cannot report driver state.
-    WizardSelectComponents('!vbcable');
-    if not WizardSilent then
+    if not WizardSilent then begin
+      WizardSelectComponents('!vbcable');
       MsgBox('Impossibile verificare se VB-CABLE e'' gia'' installato.' + #13#10 +
              'Per sicurezza l''avvio automatico del setup driver e'' disabilitato.' + #13#10 +
              'Puoi gestirlo manualmente dal pacchetto ufficiale VB-Audio.',
              mbInformation, MB_OK);
+    end;
   end;
 end;
 
