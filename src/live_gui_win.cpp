@@ -10,6 +10,7 @@
 #include <functiondiscoverykeys_devpkey.h>
 #include <wrl/client.h>
 #include <algorithm>
+#include <cstdlib>
 #include <array>
 #include <filesystem>
 #include <string>
