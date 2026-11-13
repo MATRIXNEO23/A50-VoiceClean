@@ -1,0 +1,82 @@
+SECOND BRAIN DI LUMI - CONSIGLI DI PROGETTAZIONE
+Data: 13 novembre 2026
+Stato: proposta tecnica, NON implementata.
+Destinazione: Lumi (assistente locale, precedentemente Jarvis).
+Nota: questo file e' conservato nella repo A50-VoiceClean su richiesta. Non implica che il Second Brain sia parte del software audio A50.
+
+OBIETTIVO
+Consentire a Lumi di accumulare molti ricordi senza doverli inserire tutti nel prompt di Gemma o rileggerli ad ogni domanda. Recuperare pochi dati pertinenti, rapidamente e completamente offline, preservando sempre la memoria originale.
+
+PC DI RIFERIMENTO
+- HP Pavilion, Intel Core i3-2100 (2 core / 4 thread, AVX ma non AVX2).
+- 10 GB RAM DDR3; hard disk meccanico da 1 TB; Radeon HD 6450 da 1 GB; Windows 10 64 bit.
+- Motore LLM locale: KoboldCPP + Gemma 2 2B IT Q4_K_M.
+- Priorita': poco carico CPU/RAM, letture disco contenute, interfaccia sempre reattiva, nessun servizio cloud obbligatorio.
+
+ARCHITETTURA CONSIGLIATA
+1. ARCHIVIO DURATURO (FREDDO)
+   - SQLite locale come fonte autorevole dei ricordi e dei messaggi originali.
+   - Ogni elemento possiede un ID stabile, testo originale, data/ora, fonte, tipo, eventuale conversazione, versione e collegamenti.
+   - Non cancellare ne' sovrascrivere gli originali durante riassunti, reindicizzazioni o pulizie.
+   - Correzioni e contraddizioni: conservare cronologia/versioni e marcare la preferenza attuale; distinguere un fatto scaduto da uno ancora valido.
+2. INDICE DI RICERCA (TIEPIDO)
+   - SQLite FTS5 per cercare parole e frasi senza scansionare tutti i ricordi.
+   - Indici B-tree normali su ID, timestamp, categoria, persona/argomento e conversazione.
+   - Piccolo dizionario locale di sinonimi/alias: es. "GPU" = "scheda video" = "scheda grafica"; "Lumi" = ex "Jarvis" quando pertinente.
+   - Indice aggiornato INCREMENTALMENTE quando si aggiunge o cambia un ricordo; ricostruzione totale solo per manutenzione o riparazione.
+3. CONTESTO ATTIVO (CALDO)
+   - Cache RAM piccola e con limite massimo, contenente ultimi turni, fatti utili ricorrenti e risultati di ricerche recenti.
+   - Espulsione controllata (es. LRU + priorita'); il contenuto originale resta nel database.
+
+COME RISOLVERE UNA RICHIESTA
+A. Lumi riceve la frase, es.: "Ti ricordi che scheda video ho?".
+B. Un modulo leggero estrae parole chiave e alias, SENZA chiamare Gemma per ogni ricerca.
+C. FTS5 individua i ricordi candidati. Filtra per entita', argomento, data e stato di validita'.
+D. Ordina un piccolo gruppo di risultati usando pertinenza testuale, affidabilita' della fonte, recenza quando utile e collegamenti.
+E. Deduplica; restituisce a Gemma solo i 3-8 passaggi migliori, con provenienza e data, entro un limite di token configurabile.
+F. Gemma formula la risposta; se le prove non bastano, Lumi lo dichiara invece di inventare.
+G. Se la richiesta e' ambigua, fare un secondo tentativo mirato o ricorrere a Gemma come fallback, non come primo passaggio obbligatorio.
+
+ACCORGIMENTI DI QUALITA'
+- Separare: messaggi originali, fatti estratti, preferenze, riassunti, collegamenti e risultati di ricerca.
+- Un riassunto e' un supporto, non un sostituto dell'originale. Collegare sempre il riassunto ai messaggi sorgente.
+- Deduplicazione prudente: non fondere ricordi simili che differiscono per date o significato.
+- Ricerca robusta: maiuscole, accenti, punteggiatura, flessioni comuni, alias; per errori di dettatura introdurre eventualmente fuzzy search limitata sui candidati.
+- Per le richieste temporali considerare sempre la data del fatto e la sua eventuale scadenza.
+- Memorie sensibili: accesso locale, permessi file, eventuale cifratura da valutare; niente upload automatico.
+- Non aggiungere subito un database vettoriale pesante o un modello di embedding: prima misurare se FTS5+alias soddisfa i casi reali; eventualmente aggiungere una ricerca semantica opzionale in seguito.
+
+PRESTAZIONI SU I3-2100 E HDD
+- Query con indici, LIMIT ai candidati, paginazione per gli archivi.
+- Aprire il database una volta e riutilizzare la connessione (o un piccolo pool controllato).
+- Modalita' SQLite WAL se appropriata; valutare il comportamento su HDD e i backup consistenti.
+- Scritture e indicizzazione a piccoli lotti, a priorita' bassa, senza bloccare microfono o interfaccia.
+- Nessuna scansione completa a ogni avvio; eventuale manutenzione in inattivita'.
+- Limiti configurabili per cache RAM, risultati, lunghezza del contesto e lavoro in background.
+- Non promettere tempi costanti: misurare latenza mediana e p95 all'aumentare dei ricordi.
+
+SICUREZZA DEI DATI
+- Backup periodici, esportazione leggibile e procedura di ripristino testata.
+- Migrazioni dello schema versionate; transazioni atomiche e rollback.
+- In caso di errore dell'indice, ricostruirlo DAGLI ORIGINALI, senza perdita di dati.
+- Operazioni distruttive solo con conferma esplicita; niente cancellazioni silenziose.
+- Controlli di integrita' (PRAGMA integrity_check) eseguiti in manutenzione, non ad ogni domanda.
+
+PIANO DI SVILUPPO PROPOSTO
+FASE 1: schema SQLite, archivio originale, FTS5, ricerca semplice e test.
+FASE 2: sinonimi/alias, gestione entita' e collegamenti, ordinamento risultati.
+FASE 3: cache calda, indicizzazione incrementale e inserimento mirato nel prompt Gemma.
+FASE 4: backup, verifiche di integrita', migrazioni, recupero da errori.
+FASE 5: benchmark reali su i3-2100 con 1.000 / 10.000 / 100.000 ricordi.
+
+TEST DI ACCETTAZIONE
+- "Che scheda video ho?" -> trova "Radeon HD 6450" se presente nell'archivio.
+- "Che GPU ho?" -> stesso fatto grazie agli alias.
+- "Cosa avevo detto il mese scorso?" -> privilegia la data corretta.
+- Fatti contraddittori -> espone l'incertezza e usa la versione attuale solo se verificabile.
+- Riavvio Lumi -> nessun ricordo originale perso; l'indice rimane disponibile.
+- Ricostruzione indice -> stessi originali, nessuna cancellazione.
+- Carico CPU, RAM, latenza e accessi HDD misurati mentre Lumi ascolta e risponde.
+
+REGOLA CHIAVE
+Lumi deve CERCARE il ricordo con un motore leggero e usare Gemma soprattutto per CAPIRE E RISPONDERE. Il Second Brain puo' crescere; non deve crescere inutilmente anche il lavoro per ogni risposta.
