@@ -18,6 +18,8 @@ int main() {
     values.mix_milli=250;
     values.monitor_enabled=1;
     values.monitor_volume_milli=200;
+    values.clarity_enabled=0;
+    values.denoise_strength_milli=550;
     a50::publish(&shared,values);
     assert(a50::snapshot(&shared,snapshot,version));
     assert(version==4 && snapshot.pitch_tenths==75 &&
@@ -25,7 +27,9 @@ int main() {
            snapshot.voice_enabled==1 &&
            snapshot.mix_milli==250 &&
            snapshot.monitor_enabled==1 &&
-           snapshot.monitor_volume_milli==200);
+           snapshot.monitor_volume_milli==200 &&
+           snapshot.clarity_enabled==0 &&
+           snapshot.denoise_strength_milli==550);
     InterlockedExchange(&shared.meter_input_db,318);
     InterlockedExchange(&shared.meter_output_db,185);
     InterlockedExchange(&shared.voice_probability_milli,817);
