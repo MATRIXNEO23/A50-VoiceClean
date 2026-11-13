@@ -11,6 +11,7 @@ class RNNoiseFilter {
     DenoiseState* state_ = nullptr;
     std::array<float,480> input_{};
     std::array<float,480> denoised_{};
+    std::array<float,480> original_{};
     std::size_t filled_ = 0;
     float voice_probability_ = 0.f;
 public:
@@ -21,5 +22,7 @@ public:
     // Returns true if a complete 10-ms frame is emitted into result.
     bool feed(float sample,std::array<float,480>& result);
     float last_voice_probability() const noexcept {return voice_probability_;}
+    // The same 10 ms input frame, before RNNoise, for gentle consonant recovery.
+    const std::array<float,480>& last_original_frame() const noexcept {return original_;}
 };
 }

@@ -18,6 +18,7 @@ int main() {
     a50::StoredProfile original;
     original.sliders={3,72,-43,5,38,-4,3,95};
     original.denoise=1;original.vad=1;original.voice=1;
+    original.clarity=1;original.denoise_strength=65;
     a50::save_profile_file(file,L"Mio preset",original);
     assert(a50::profile_exists(file,L"Mio preset"));
     const auto names=a50::list_profiles(file);
@@ -25,6 +26,7 @@ int main() {
     const auto loaded=a50::load_profile_file(file,L"Mio preset");
     assert(loaded.sliders==original.sliders);
     assert(loaded.voice==1 && loaded.vad==1 && loaded.denoise==1);
+    assert(loaded.clarity==1 && loaded.denoise_strength==65);
     std::filesystem::remove(file);
     std::cout<<"Live profile validation and persistence passed\n";
 }

@@ -10,6 +10,7 @@
 #include <functiondiscoverykeys_devpkey.h>
 #include <wrl/client.h>
 #include <algorithm>
+#include <cstdlib>
 #include <array>
 #include <filesystem>
 #include <string>
@@ -25,7 +26,8 @@ enum : int {InputSelect=101,OutputSelect=102,Refresh=103,Start=104,Stop=105,
              PitchSlider=204,ResonanceSlider=205,BassSlider=206,
              BrightnessSlider=207,MixSlider=208,
              ProfileCombo=401,ProfileName=402,LoadProfile=403,SaveProfile=404,
-             MonitorCheck=501,MonitorSelect=502,MonitorSlider=503};
+             MonitorCheck=501,MonitorSelect=502,MonitorSlider=503,
+             ClarityCheck=504,DenoiseStrengthSlider=505};
 HWND window=nullptr,in_combo=nullptr,out_combo=nullptr,gain_slider=nullptr,
      probability_slider=nullptr,floor_slider=nullptr,denoise_check=nullptr,
      vad_check=nullptr,status_text=nullptr,gain_value=nullptr,
@@ -37,12 +39,60 @@ HWND pitch_value=nullptr,resonance_value=nullptr,bass_value=nullptr,
 HWND profile_combo=nullptr,profile_name=nullptr;
 HWND input_meter=nullptr,output_meter=nullptr,speech_status=nullptr;
 HWND monitor_combo=nullptr,monitor_check=nullptr,monitor_slider=nullptr,monitor_value=nullptr;
+HWND clarity_check=nullptr,denoise_strength_slider=nullptr,denoise_strength_value=nullptr;
 std::vector<int> monitor_output_indices;
 HFONT font=nullptr;
 PROCESS_INFORMATION process{};
 HANDLE stop_event=nullptr,job=nullptr,config_mapping=nullptr;
 a50::LiveShared* shared_config=nullptr;
 std::vector<std::wstring> inputs,outputs,input_ids,output_ids;
+// Fixed logical control layout with scrollable viewport for 720p/low-DPI screens.
+constexpr int layout_width=1020,layout_height=752;
+int scroll_x=0,scroll_y=0;
+void adjust_scrollbars(HWND h) {
+    RECT r{};GetClientRect(h,&r);
+    SCROLLINFO si{};si.cbSize=sizeof(si);
+    si.fMask=SIF_RANGE|SIF_PAGE|SIF_POS;si.nMin=0;
+    si.nMax=layout_width-1;si.nPage=static_cast<UINT>(std::max(1L,r.right-r.left));
+    si.nPos=scroll_x;
+    SetScrollInfo(h,SB_HORZ,&si,TRUE);
+    si.fMask=SIF_POS;GetScrollInfo(h,SB_HORZ,&si);
+    const int new_x=si.nPos;
+    si.fMask=SIF_RANGE|SIF_PAGE|SIF_POS;si.nMin=0;
+    si.nMax=layout_height-1;si.nPage=static_cast<UINT>(std::max(1L,r.bottom-r.top));
+    si.nPos=scroll_y;
+    SetScrollInfo(h,SB_VERT,&si,TRUE);
+    si.fMask=SIF_POS;GetScrollInfo(h,SB_VERT,&si);
+    const int new_y=si.nPos;
+    if(new_x!=scroll_x || new_y!=scroll_y)
+        ScrollWindowEx(h,scroll_x-new_x,scroll_y-new_y,nullptr,nullptr,
+                       nullptr,nullptr,SW_SCROLLCHILDREN|SW_INVALIDATE|SW_ERASE);
+    scroll_x=new_x;scroll_y=new_y;
+}
+void scroll_page(HWND h,int bar,WPARAM w) {
+    SCROLLINFO si{};si.cbSize=sizeof(si);si.fMask=SIF_ALL;
+    if(!GetScrollInfo(h,bar,&si))return;
+    const int old=si.nPos;
+    switch(LOWORD(w)) {
+    case SB_LINEUP:si.nPos-=24;break;
+    case SB_LINEDOWN:si.nPos+=24;break;
+    case SB_PAGEUP:si.nPos-=static_cast<int>(si.nPage);break;
+    case SB_PAGEDOWN:si.nPos+=static_cast<int>(si.nPage);break;
+    case SB_THUMBTRACK:case SB_THUMBPOSITION:si.nPos=si.nTrackPos;break;
+    case SB_TOP:si.nPos=si.nMin;break;
+    case SB_BOTTOM:si.nPos=si.nMax;break;
+    default:return;
+    }
+    si.fMask=SIF_POS;SetScrollInfo(h,bar,&si,TRUE);
+    GetScrollInfo(h,bar,&si);
+    if(si.nPos!=old) {
+        const int shift=old-si.nPos;
+        ScrollWindowEx(h,bar==SB_HORZ?shift:0,bar==SB_VERT?shift:0,
+                       nullptr,nullptr,nullptr,nullptr,
+                       SW_SCROLLCHILDREN|SW_INVALIDATE|SW_ERASE);
+        if(bar==SB_HORZ)scroll_x=si.nPos;else scroll_y=si.nPos;
+    }
+}
 
 void check(HRESULT hr,const char* op) {
     if(FAILED(hr)) throw std::runtime_error(op);
@@ -150,6 +200,9 @@ void values() {
     if(monitor_value)
         SetWindowTextW(monitor_value,
             (std::to_wstring(slider(monitor_slider))+L" %").c_str());
+    if(denoise_strength_value)
+        SetWindowTextW(denoise_strength_value,
+            (std::to_wstring(slider(denoise_strength_slider))+L" %").c_str());
 }
 void publish_live_settings() {
     if(!shared_config) return;
@@ -165,6 +218,8 @@ void publish_live_settings() {
     v.mix_milli=slider(mix_slider)*10;
     v.monitor_enabled=SendMessageW(monitor_check,BM_GETCHECK,0,0)==BST_CHECKED;
     v.monitor_volume_milli=slider(monitor_slider)*10;
+    v.clarity_enabled=SendMessageW(clarity_check,BM_GETCHECK,0,0)==BST_CHECKED;
+    v.denoise_strength_milli=slider(denoise_strength_slider)*10;
     a50::publish(shared_config,v);
 }
 std::filesystem::path profile_path() {
@@ -186,6 +241,8 @@ a50::StoredProfile current_profile() {
     p.denoise=SendMessageW(denoise_check,BM_GETCHECK,0,0)==BST_CHECKED;
     p.vad=SendMessageW(vad_check,BM_GETCHECK,0,0)==BST_CHECKED;
     p.voice=SendMessageW(voice_check,BM_GETCHECK,0,0)==BST_CHECKED;
+    p.clarity=SendMessageW(clarity_check,BM_GETCHECK,0,0)==BST_CHECKED;
+    p.denoise_strength=slider(denoise_strength_slider);
     return p;
 }
 void apply_profile(const a50::StoredProfile& p) {
@@ -197,6 +254,9 @@ void apply_profile(const a50::StoredProfile& p) {
     SendMessageW(denoise_check,BM_SETCHECK,p.denoise?BST_CHECKED:BST_UNCHECKED,0);
     SendMessageW(vad_check,BM_SETCHECK,p.vad?BST_CHECKED:BST_UNCHECKED,0);
     SendMessageW(voice_check,BM_SETCHECK,p.voice?BST_CHECKED:BST_UNCHECKED,0);
+    SendMessageW(clarity_check,BM_SETCHECK,p.clarity?BST_CHECKED:BST_UNCHECKED,0);
+    SendMessageW(denoise_strength_slider,TBM_SETPOS,TRUE,
+                 std::clamp(p.denoise_strength,0,100));
     values();publish_live_settings();
 }
 void refresh_profiles() {
@@ -447,10 +507,18 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         denoise_check=control(L"BUTTON",L"RNNoise (pulizia)",BS_AUTOCHECKBOX,20,423,185,24,DenoiseCheck);
         vad_check=control(L"BUTTON",L"Attiva solo con voce (VAD)",BS_AUTOCHECKBOX,245,423,255,24,VadCheck);
         SendMessageW(denoise_check,BM_SETCHECK,BST_CHECKED,0);
-        SendMessageW(vad_check,BM_SETCHECK,BST_CHECKED,0);
+        SendMessageW(vad_check,BM_SETCHECK,BST_UNCHECKED,0);
         set_slider(gain_slider,-12,24,0);
         set_slider(probability_slider,20,95,65);
         set_slider(floor_slider,-80,-20,-46);
+        clarity_check=control(L"BUTTON",L"Parlato piano: piu chiaro",BS_AUTOCHECKBOX,
+                              20,450,240,26,ClarityCheck);
+        SendMessageW(clarity_check,BM_SETCHECK,BST_CHECKED,0);
+        control(L"STATIC",L"Pulizia RNNoise",0,275,455,125,18);
+        denoise_strength_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,
+                                       403,443,143,35,DenoiseStrengthSlider);
+        denoise_strength_value=control(L"STATIC",L"80 %",0,555,455,62,19);
+        set_slider(denoise_strength_slider,0,100,80);
 
         control(L"STATIC",L"Modificatore vocale leggero (sperimentale)",0,624,202,380,24);
         voice_check=control(L"BUTTON",L"Attiva trasformazione",BS_AUTOCHECKBOX,624,232,245,22,VoiceCheck);
@@ -505,13 +573,24 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         SetTimer(h,1,100,nullptr);
         return 0;
     }
-    case WM_HSCROLL: values();publish_live_settings();return 0;
+    case WM_SIZE:adjust_scrollbars(h);return 0;
+    case WM_VSCROLL:if(!l)scroll_page(h,SB_VERT,w);return 0;
+    case WM_HSCROLL:
+        if(!l)scroll_page(h,SB_HORZ,w);
+        else {values();publish_live_settings();}
+        return 0;
+    case WM_MOUSEWHEEL: {
+        const int ticks=GET_WHEEL_DELTA_WPARAM(w)/WHEEL_DELTA;
+        for(int i=0;i<std::abs(ticks)*3;++i)
+            scroll_page(h,SB_VERT,MAKEWPARAM(ticks>0?SB_LINEUP:SB_LINEDOWN,0));
+        return 0;
+    }
     case WM_COMMAND:
         switch(LOWORD(w)) {
         case Refresh: if(!running()){try{populate();}catch(...){message(L"Errore lettura dispositivi.");}}return 0;
         case Start: start_engine();return 0;
         case Stop: stop_engine();return 0;
-        case VoiceCheck: publish_live_settings();return 0;
+        case VoiceCheck: case ClarityCheck: publish_live_settings();return 0;
         case MonitorCheck:
             if(SendMessageW(monitor_check,BM_GETCHECK,0,0)==BST_CHECKED &&
                SendMessageW(monitor_combo,CB_GETCURSEL,0,0)==CB_ERR) {
@@ -567,9 +646,15 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int show) {
     wc.hCursor=LoadCursor(nullptr,IDC_ARROW);
     wc.hbrBackground=reinterpret_cast<HBRUSH>(COLOR_WINDOW+1);
     RegisterClassExW(&wc);
+    RECT desktop{};
+    SystemParametersInfoW(SPI_GETWORKAREA,0,&desktop,0);
+    const int usable_width=static_cast<int>(desktop.right-desktop.left);
+    const int usable_height=static_cast<int>(desktop.bottom-desktop.top);
+    const int initial_width=std::min(1035,std::max(450,usable_width));
+    const int initial_height=std::min(794,std::max(400,usable_height));
     HWND h=CreateWindowExW(0,wc.lpszClassName,L"A50 VoiceClean - Live",
-        WS_OVERLAPPEDWINDOW&~WS_THICKFRAME,
-        CW_USEDEFAULT,CW_USEDEFAULT,1035,794,
+        WS_OVERLAPPEDWINDOW|WS_HSCROLL|WS_VSCROLL,
+        CW_USEDEFAULT,CW_USEDEFAULT,initial_width,initial_height,
         nullptr,nullptr,instance,nullptr);
     if(!h) {CoUninitialize();return 1;}
     ShowWindow(h,show);UpdateWindow(h);

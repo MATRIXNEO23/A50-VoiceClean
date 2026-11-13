@@ -13,7 +13,9 @@ RNNoiseFilter::RNNoiseFilter() : state_(rnnoise_create(nullptr)) {
 RNNoiseFilter::~RNNoiseFilter() {if(state_) rnnoise_destroy(state_);}
 bool RNNoiseFilter::feed(float sample,std::array<float,480>& result) {
     if(!std::isfinite(sample)) sample=0.f;
-    input_[filled_++]=std::clamp(sample,-1.f,1.f)*32768.f;
+    const float clean=std::clamp(sample,-1.f,1.f);
+    original_[filled_]=clean;
+    input_[filled_++]=clean*32768.f;
     if(filled_ < 480) return false;
     filled_=0;
     voice_probability_=rnnoise_process_frame(state_,denoised_.data(),input_.data());

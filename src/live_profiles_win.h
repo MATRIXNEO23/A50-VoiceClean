@@ -2,6 +2,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <array>
+#include <algorithm>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -11,12 +12,14 @@
 namespace a50 {
 struct StoredProfile {
     std::array<int,8> sliders{}; // gain, prob, minvoice, pitch, resonance, bass, bright, mix
-    int denoise=1, vad=1, voice=0;
+    int denoise=1, vad=0, voice=0;
+    int clarity=1, denoise_strength=80;
 };
-inline const std::array<const wchar_t*,11>& profile_keys() {
-    static const std::array<const wchar_t*,11> k{
+inline const std::array<const wchar_t*,13>& profile_keys() {
+    static const std::array<const wchar_t*,13> k{
         L"gain",L"prob",L"minvoice",L"pitch",L"resonance",
-        L"bass",L"brightness",L"mix",L"denoise",L"vad",L"voice"
+        L"bass",L"brightness",L"mix",L"denoise",L"vad",L"voice",
+        L"clarity",L"denoise_strength"
     };
     return k;
 }
@@ -40,9 +43,10 @@ inline bool profile_exists(const std::filesystem::path& file,const std::wstring&
 inline void save_profile_file(const std::filesystem::path& file,
                               const std::wstring& name,const StoredProfile& values) {
     if(!valid_profile_name(name)) throw std::invalid_argument("Invalid profile name");
-    std::array<int,11> all{};
+    std::array<int,13> all{};
     for(std::size_t i=0;i<8;++i) all[i]=values.sliders[i];
     all[8]=values.denoise; all[9]=values.vad; all[10]=values.voice;
+    all[11]=values.clarity; all[12]=std::clamp(values.denoise_strength,0,100);
     const auto& keys=profile_keys();
     for(std::size_t i=0;i<all.size();++i) {
         const auto val=std::to_wstring(all[i]);
@@ -55,13 +59,14 @@ inline StoredProfile load_profile_file(const std::filesystem::path& file,
     if(!valid_profile_name(name)||!profile_exists(file,name))
         throw std::invalid_argument("Unknown profile");
     StoredProfile result;
-    constexpr std::array<int,11> defaults{0,65,-46,4,35,-3,2,100,1,1,0};
-    std::array<int,11> v{};
+    constexpr std::array<int,13> defaults{0,65,-46,4,35,-3,2,100,1,0,0,1,80};
+    std::array<int,13> v{};
     const auto& keys=profile_keys();
     for(std::size_t i=0;i<v.size();++i)
         v[i]=GetPrivateProfileIntW(name.c_str(),keys[i],defaults[i],file.c_str());
     for(std::size_t i=0;i<8;++i)result.sliders[i]=v[i];
     result.denoise=v[8]; result.vad=v[9]; result.voice=v[10];
+    result.clarity=v[11]; result.denoise_strength=std::clamp(v[12],0,100);
     return result;
 }
 }
