@@ -80,3 +80,44 @@ TEST DI ACCETTAZIONE
 
 REGOLA CHIAVE
 Lumi deve CERCARE il ricordo con un motore leggero e usare Gemma soprattutto per CAPIRE E RISPONDERE. Il Second Brain puo' crescere; non deve crescere inutilmente anche il lavoro per ogni risposta.
+
+GENERATORE DI PROMPT E ISTRUZIONI (PROMPT BUILDER)
+Obiettivo: costruire automaticamente il prompt da inviare a Gemma combinando regole di Lumi, memorie pertinenti, cronologia e messaggio corrente, con il minimo costo possibile sul PC.
+
+- Implementare un modulo locale leggero in codice tradizionale (non richiedere un secondo LLM a ogni turno).
+- Separare istruzioni e dati: i ricordi e i messaggi recuperati sono CONTENUTI, non comandi privilegiati. Un ricordo non puo' sovrascrivere le istruzioni del sistema.
+- Definire un budget esplicito di token per il modello effettivamente caricato, considerando il formato chat/template di Gemma, i token speciali e lo spazio necessario per generare la risposta.
+- Ordine di priorita': regole essenziali e sicurezza; messaggio attuale; contesto conversazionale indispensabile; ricordi utili e verificati; dettagli accessori. Non troncare alla cieca testo o messaggi importanti.
+- Inserire nei ricordi selezionati origine, data e, quando disponibile, grado di affidabilita'. In caso di conflitti distinguere tra informazioni vecchie e aggiornate.
+- Conservare la parte iniziale del prompt quanto piu' stabile possibile (istruzioni essenziali e template corretto); mettere il materiale piu' variabile in posizioni appropriate, nel rispetto del formato del modello.
+- Verificare il corretto template Gemma/KoboldCPP: evitare formattazioni inventate e duplicazioni di token speciali.
+
+DUE CACHE DIVERSE, DA USARE INSIEME
+1) CACHE DI CONVERSAZIONE DI LUMI (gestita dall'app):
+   - Conserva temporaneamente l'argomento corrente, un piccolo numero di turni e i ricordi gia' trovati nel Second Brain.
+   - Se l'utente fa una domanda di seguito sullo stesso argomento, riutilizza i ricordi gia' recuperati senza ripetere inutilmente la ricerca nel database.
+   - Limiti espliciti di memoria e durata; invalidare o aggiornare i risultati quando cambiano i fatti sottostanti, l'argomento o le istruzioni.
+   - Le informazioni eliminate dalla cache NON vengono eliminate dall'archivio permanente.
+2) RIUSO DEL PROMPT / KV CACHE DEL MOTORE (KoboldCPP):
+   - E' distinto dalla cache applicativa: puo' evitare di rielaborare il prefisso tokenizzato identico gia' processato, se la versione e la configurazione di KoboldCPP lo supportano e lo mantengono.
+   - Il solo fatto di tenere il testo in RAM non garantisce questo riuso: verificare concretamente la funzionalita' e le condizioni di invalidazione.
+   - Non alterare inutilmente il prefisso stabile, ma non sacrificare la correttezza o le istruzioni per preservare la cache.
+   - Confrontare tempi di elaborazione del prompt (prefill), primi token e consumo RAM con cache attive e disattive.
+
+FLUSSO OPERATIVO SUGGERITO
+1. Ricevere il nuovo messaggio e identificare se prosegue l'argomento corrente.
+2. Consultare la cache conversazionale; cercare nel Second Brain soltanto se mancano fatti pertinenti o sono diventati obsoleti.
+3. Selezionare e ordinare ricordi pertinenti entro il budget di token.
+4. Assemblare istruzioni, ricordi, breve cronologia e messaggio corrente nel formato corretto per Gemma.
+5. Inviare a KoboldCPP e, quando possibile, beneficiare del riuso del prefisso del prompt.
+6. Aggiornare cache di Lumi e cronologia persistente senza cancellare gli originali.
+
+TEST PRATICI SUL PC DI RIFERIMENTO
+- Domanda: "Che scheda video ho?" -> ricerca indicizzata nel Second Brain.
+- Seguito: "E quanta memoria ha?" -> riuso del contesto della scheda video, senza nuova ricerca se non necessaria.
+- Cambio argomento: "Parliamo del risotto" -> non inserire piu' ricordi hardware non pertinenti.
+- Modifica di un ricordo o istruzione -> invalidare la relativa cache ed evitare risposte obsolete.
+- Misurare latenza, CPU, RAM e utilizzo HDD su i3-2100; documentare il guadagno effettivo, senza presumerlo.
+
+NOTA SULLO STATO
+Queste sono raccomandazioni progettuali. Non indicano che Prompt Builder, cache conversazionale o riuso KV siano stati implementati o verificati nell'app Lumi.
