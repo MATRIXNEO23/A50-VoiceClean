@@ -66,6 +66,23 @@ jobs:
           }
           if (-not (Test-Path $compiler)) { throw "ISCC.exe missing after installation" }
 
+      - name: Verify VB-CABLE duplicate-install protection
+        shell: pwsh
+        run: |
+          $script = Get-Content 'installer\A50VoiceClean.iss' -Raw
+          $required = @(
+            'Win32_PnPEntity',
+            'VB-Audio Virtual Cable',
+            'WizardSelectComponents(''!vbcable'')',
+            'Check: ShouldLaunchVendorSetup',
+            'Result := DetectionOK and not Installed'
+          )
+          foreach ($needle in $required) {
+            if (-not $script.Contains($needle)) {
+              throw "Missing VB-CABLE duplicate-install protection: $needle"
+            }
+          }
+
       - name: Build unified Windows installer
         shell: pwsh
         run: |
