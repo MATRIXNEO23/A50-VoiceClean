@@ -102,6 +102,10 @@ jobs:
             '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/COMPONENTS=app', "/DIR=$target"
           )
           if ($install.ExitCode -ne 0) { throw "VoiceClean installation exited $($install.ExitCode)" }
+          if (-not (Test-Path (Join-Path $target 'Licenze\SIGNALSMITH_STRETCH_LICENSE.txt')) -or
+              -not (Test-Path (Join-Path $target 'Licenze\SIGNALSMITH_LINEAR_LICENSE.txt'))) {
+            throw 'Missing spectral processor license notices.'
+          }
           if (-not (Test-Path (Join-Path $target 'A50VoiceClean-Control.exe')) -or
               -not (Test-Path (Join-Path $target 'A50VoiceClean-Live.exe'))) {
             throw 'The installer did not install both native VoiceClean processes.'
