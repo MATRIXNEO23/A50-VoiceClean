@@ -9,6 +9,11 @@
 #include <iostream>
 
 int main() {
+    // Timbre must be a distinct adjustment, never derived from pitch.
+    assert(std::fabs(a50::formant_semitones_from_timbre(0.35f)-2.1f)<0.0001f);
+    assert(a50::formant_semitones_from_timbre(0.f)==0.f);
+    assert(a50::formant_semitones_from_timbre(2.f)==6.f);
+    assert(a50::formant_semitones_from_timbre(-2.f)==-6.f);
     a50::FormantVoice voice;
     // 48kHz streaming requires bounded latency. This is not an audio-quality test.
     assert(voice.latency_samples()>0 && voice.latency_samples()<48000);
@@ -32,6 +37,14 @@ int main() {
         frame.fill(0.02f);
         voice.process(frame);
         for(float s:frame) assert(std::isfinite(s) && std::fabs(s)<=0.9801f);
+    }
+    // Rapid slider movement must never produce NaNs or out-of-range samples.
+    voice.set_settings(-10.f,-5.f,0.f);
+    for(int f=0;f<50;++f) {
+        frame.fill(0.02f);
+        voice.process(frame);
+        for(float sample:frame)
+            assert(std::isfinite(sample) && std::fabs(sample)<=0.9801f);
     }
     voice.reset();
     frame.fill(0.f);
