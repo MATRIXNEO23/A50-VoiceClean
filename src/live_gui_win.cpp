@@ -520,12 +520,12 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         denoise_strength_value=control(L"STATIC",L"80 %",0,555,455,62,19);
         set_slider(denoise_strength_slider,0,100,80);
 
-        control(L"STATIC",L"Modificatore vocale leggero (sperimentale)",0,624,202,380,24);
-        voice_check=control(L"BUTTON",L"Attiva trasformazione",BS_AUTOCHECKBOX,624,232,245,22,VoiceCheck);
+        control(L"STATIC",L"Trasformazione spettrale: tonalita e formanti (preview)",0,624,202,380,24);
+        voice_check=control(L"BUTTON",L"Attiva voce trasformata",BS_AUTOCHECKBOX,624,232,245,22,VoiceCheck);
         control(L"STATIC",L"Tonalita",0,624,277,110,18);
         pitch_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,742,270,162,31,PitchSlider);
         pitch_value=control(L"STATIC",L"",0,916,277,80,18);
-        control(L"STATIC",L"Timbro",0,624,320,110,18);
+        control(L"STATIC",L"Formanti / timbro",0,624,320,110,18);
         resonance_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,742,313,162,31,ResonanceSlider);
         resonance_value=control(L"STATIC",L"",0,916,320,80,18);
         control(L"STATIC",L"Bassi",0,624,363,110,18);
