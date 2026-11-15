@@ -89,3 +89,11 @@ La v0.2 WAV resta un componente distinto e non deve essere confusa con il filtro
 - VB-CABLE e facoltativo ed e richiesto soltanto se si vuole consegnare il segnale elaborato come *microfono virtuale* ad altre applicazioni. Per rimuoverlo anche da questo caso serve un driver microfono virtuale alternativo, non un semplice cambio d'uscita.
 - La regolazione percentuale RNNoise e indipendente da «Parlato piano»: 0% miscela solo ingresso originale, 100% solo RNNoise; le variazioni sono smussate contro gli scatti. L'AGC/EQ «Parlato piano» parte spento per evitare artefatti segnalati durante il collaudo.
 - Queste correzioni NON costituiscono una build definitiva e non dimostrano ancora la qualita del timbro femminile. Non installare build intermedie come release.
+
+## Motore spettrale formanti e pulizia delle pause (candidato, non release definitiva)
+
+- Durante l'uso live la trasformazione vocale non usa più il vecchio pitch shifter a due grani: usa **Signalsmith Stretch** (MIT), con impostazioni di pitch e formanti distinte, senza modelli online e senza richiedere AVX2. La vecchia trasformazione WAV resta separata.
+- Il processore a 48 kHz usa finestre spettrali di 3072 campioni e intervalli di 960, con carico e ritardo da misurare su i3-2100; i controlli timbro/pitch restano sperimentali. Questo non equivale alla conversione neurale di identità vocale e **non garantisce** voce femminile realistica.
+- RNNoise adatta la miscela durante il parlato e privilegia l'audio filtrato nel silenzio, per evitare che il cursore a 70% reintroduca fruscio nelle pause. Il controllo è indipendente da «Parlato piano», ora OFF di default.
+- Includere nel pacchetto le licenze MIT di Signalsmith Stretch e Signalsmith Linear. Dependency source pinnato durante la build, esecuzione offline.
+- Test CI e smoke installer controllano compilazione/stabilità, non sostituiscono ascolto e misurazioni sul microfono reale. **La PR 16 resta bozza finché non è verificata la qualità richiesta.**
