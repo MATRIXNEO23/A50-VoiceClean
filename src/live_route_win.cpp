@@ -7,6 +7,7 @@
 #include "rnnoise_filter.h"
 #include "voice_gate.h"
 #include "voice_clarity.h"
+#include "formant_voice.h"
 #include "live_shared.h"
 #include <windows.h>
 #include <audioclient.h>
@@ -328,8 +329,12 @@ void route(IMMDevice* microphone, IMMDevice* destination,
     clarity.set_denoise_strength(initial_denoise_strength);
     a50::Processor dsp(in.rate,settings);
     // Voice DSP follows RNNoise/VAD so the noise model sees original speech.
-    a50::Processor voice_48k(48000,voice_settings);
-    a50::Processor voice_input_rate(in.rate,voice_settings);
+    a50::FormantVoice formant_voice;
+    a50::Settings voice_eq_settings=voice_settings;
+    voice_eq_settings.pitch_semitones=0.f; // No duplicate granular pitch shift.
+    a50::Processor voice_48k(48000,voice_eq_settings);
+    std::array<float,480> passthrough_frame{};
+    std::size_t passthrough_used=0;
     std::vector<float> block;
     const std::size_t prebuffer=static_cast<std::size_t>(out.rate)*40/1000;
     bool active=false;
@@ -363,8 +368,14 @@ void route(IMMDevice* microphone, IMMDevice* destination,
                         voice_settings.bass_db=std::clamp(vals.bass_tenths/10.f,-18.f,18.f);
                         voice_settings.brightness_db=std::clamp(vals.brightness_tenths/10.f,-18.f,18.f);
                         voice_settings.effect_mix=std::clamp(vals.mix_milli/1000.f,0.f,1.f);
-                        voice_48k.set_settings(voice_settings);
-                        voice_input_rate.set_settings(voice_settings);
+                        voice_eq_settings=voice_settings;
+                        voice_eq_settings.pitch_semitones=0.f;
+                        voice_48k.set_settings(voice_eq_settings);
+                        formant_voice.set_settings(
+                            voice_settings.pitch_semitones,
+                            std::clamp(voice_settings.pitch_semitones*0.65f+
+                                       voice_settings.resonance*3.f,-12.f,12.f),
+                            voice_settings.effect_mix);
                         if(vad) vad->set_sensitivity(
                             std::clamp(vals.probability_milli/1000.f,0.f,1.f),
                             std::clamp(vals.min_voice_db_tenths/10.f,-90.f,0.f));
@@ -409,22 +420,44 @@ void route(IMMDevice* microphone, IMMDevice* destination,
                                     if(vad->feed(clear_frame,
                                                  denoiser->last_voice_probability(),
                                                  gated_frame)) {
-                                        if(voice_settings.voice_enabled)
+                                        if(voice_settings.voice_enabled) {
+
+                                            formant_voice.process(gated_frame);
+
                                             voice_48k.process(gated_frame.data(),gated_frame.size());
+
+                                        }
                                         for(float sample:gated_frame)
                                             from_48k.feed(sample,queue);
                                     }
                                 } else {
-                                    if(voice_settings.voice_enabled)
+                                    if(voice_settings.voice_enabled) {
+
+                                        formant_voice.process(clear_frame);
+
                                         voice_48k.process(clear_frame.data(),clear_frame.size());
+
+                                    }
                                     for(float sample:clear_frame)
                                         from_48k.feed(sample,queue);
                                 }
                             }
                         }
+                    } else if(voice_settings.voice_enabled) {
+                        // Formant shifting still works if RNNoise is OFF.
+                        for(float sample:block) to_48k.feed(sample,pending_48k);
+                        while(pending_48k.size()) {
+                            passthrough_frame[passthrough_used++]=pending_48k.pop();
+                            if(passthrough_used==passthrough_frame.size()) {
+                                passthrough_used=0;
+                                formant_voice.process(passthrough_frame);
+                                voice_48k.process(passthrough_frame.data(),
+                                                 passthrough_frame.size());
+                                for(float sample:passthrough_frame)
+                                    from_48k.feed(sample,queue);
+                            }
+                        }
                     } else {
-                        if(voice_settings.voice_enabled)
-                            voice_input_rate.process(block.data(),block.size());
                         for(float sample:block) resampler.feed(sample,queue);
                     }
                     queue.trim_to(static_cast<std::size_t>(out.rate)*200/1000);
