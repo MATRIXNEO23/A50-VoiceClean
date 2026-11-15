@@ -29,6 +29,8 @@ jobs:
             build/Release/A50VoiceClean-Live.exe
             build/Release/A50VoiceClean-Control.exe
             third_party_licenses/RNNOISE_COPYING.txt
+            third_party_licenses/SIGNALSMITH_STRETCH_LICENSE.txt
+            third_party_licenses/SIGNALSMITH_LINEAR_LICENSE.txt
           if-no-files-found: error
       - name: Upload standalone microphone diagnostics (not a release)
         uses: actions/upload-artifact@v4

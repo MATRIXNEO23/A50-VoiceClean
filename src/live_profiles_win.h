@@ -13,7 +13,7 @@ namespace a50 {
 struct StoredProfile {
     std::array<int,8> sliders{}; // gain, prob, minvoice, pitch, resonance, bass, bright, mix
     int denoise=1, vad=0, voice=0;
-    int clarity=1, denoise_strength=80;
+    int clarity=0, denoise_strength=80;
 };
 inline const std::array<const wchar_t*,13>& profile_keys() {
     static const std::array<const wchar_t*,13> k{
@@ -59,7 +59,7 @@ inline StoredProfile load_profile_file(const std::filesystem::path& file,
     if(!valid_profile_name(name)||!profile_exists(file,name))
         throw std::invalid_argument("Unknown profile");
     StoredProfile result;
-    constexpr std::array<int,13> defaults{0,65,-46,4,35,-3,2,100,1,0,0,1,80};
+    constexpr std::array<int,13> defaults{0,65,-46,4,35,-3,2,100,1,0,0,0,80};
     std::array<int,13> v{};
     const auto& keys=profile_keys();
     for(std::size_t i=0;i<v.size();++i)

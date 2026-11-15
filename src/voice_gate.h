@@ -11,15 +11,16 @@
 namespace a50 {
 // Frame-level 48 kHz voice activity gate. It works on RNNoise's 480-sample
 // output plus speech probability, NOT merely on microphone volume.
-// Delay provides 60 ms preroll to preserve initial consonants.
+// Delay provides 180 ms preroll, so an initially unvoiced S/F consonant
+// can be recovered after the following vowel confirms speech.
 class VoiceGate {
 public:
     struct Options {
         float probability_threshold = 0.65f; // 0..1
         float minimum_voice_db = -46.f;      // voice RMS floor
         unsigned attack_frames = 2;         // 20 ms confirmation
-        unsigned preroll_frames = 6;        // 60 ms look-back
-        unsigned hold_frames = 25;          // 250 ms after voice end
+        unsigned preroll_frames = 18;       // 180 ms look-back
+        unsigned hold_frames = 30;          // 300 ms after voice end
         float fade_in_ms = 5.f;
         float fade_out_ms = 60.f;
     };
@@ -72,7 +73,12 @@ public:
         if(hits_>=opt_.attack_frames) {
             const auto start=next_index_>opt_.preroll_frames
                 ? next_index_-opt_.preroll_frames : 0;
-            if(!heard_voice_) {open_from_=start;heard_voice_=true;}
+            // Re-arm the leading-edge window for each new utterance; without
+            // this, later utterances can unexpectedly expose old background.
+            if(!heard_voice_ || next_index_ > open_until_ + opt_.preroll_frames) {
+                open_from_=start;
+            }
+            heard_voice_=true;
             open_until_=next_index_+opt_.hold_frames;
         }
         pending_.push_back(Buffered{frame,next_index_});

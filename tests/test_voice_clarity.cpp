@@ -13,8 +13,24 @@ int main() {
     // Disabled is exact bypass, not a second hidden gate.
     clarity.set_enabled(false);
     for(int i=0;i<480;++i) {original[i]=0.02f;filtered[i]=0.01f;}
+    clarity.set_denoise_strength(1.f);
+    clarity.reset();
     clarity.process(original,filtered,0.95f,output);
     for(float s:output) assert(s==0.01f);
+    // RNNoise strength works even when quiet-speech mode is OFF.
+    clarity.set_denoise_strength(0.f);
+    for(int frame=0;frame<20;++frame) clarity.process(original,filtered,0.95f,output);
+    for(float s:output) assert(std::fabs(s-0.02f)<0.00001f);
+    clarity.set_denoise_strength(0.5f);
+    for(int frame=0;frame<20;++frame) clarity.process(original,filtered,0.95f,output);
+    for(float s:output) assert(std::fabs(s-0.015f)<0.00001f);
+    // Ending speech with weak constant background noise must recover the
+    // fully denoised signal, even with manual RNNoise at 50% and AGC OFF.
+    original.fill(0.02f);
+    filtered.fill(0.001f);
+    for(int frame=0;frame<150;++frame)
+        clarity.process(original,filtered,0.f,output);
+    for(float s:output) assert(std::fabs(s-0.001f)<0.00001f);
     clarity.set_enabled(true);
     clarity.set_denoise_strength(0.8f);
     // Sustained low-volume speech is lifted, and consonants aren't gated.

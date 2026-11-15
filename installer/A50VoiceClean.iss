@@ -33,8 +33,8 @@ InfoBeforeFile=VBCABLE_NOTICE.txt
 Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
 
 [Types]
-Name: "full"; Description: "Completa (con driver audio VB-CABLE)"
-Name: "compact"; Description: "Solo A50 VoiceClean"
+Name: "compact"; Description: "VoiceClean autonomo (consigliato, senza driver extra)"
+Name: "full"; Description: "VoiceClean con VB-CABLE facoltativo per altre applicazioni"
 Name: "custom"; Description: "Personalizzata"; Flags: iscustom
 
 [Components]
@@ -45,6 +45,8 @@ Name: "vbcable"; Description: "VB-CABLE (VB-Audio, driver donationware indipende
 Source: "..\build\Release\A50VoiceClean-Control.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: app
 Source: "..\build\Release\A50VoiceClean-Live.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: app
 Source: "..\third_party_licenses\RNNOISE_COPYING.txt"; DestDir: "{app}\Licenze"; Flags: ignoreversion; Components: app
+Source: "..\third_party_licenses\SIGNALSMITH_STRETCH_LICENSE.txt"; DestDir: "{app}\Licenze"; Flags: ignoreversion; Components: app
+Source: "..\third_party_licenses\SIGNALSMITH_LINEAR_LICENSE.txt"; DestDir: "{app}\Licenze"; Flags: ignoreversion; Components: app
 Source: "VBCABLE_NOTICE.txt"; DestDir: "{app}"; Flags: ignoreversion; Components: app
 Source: "..\vendor\staged\*"; DestDir: "{app}\ThirdParty\VB-CABLE"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: vbcable
 
