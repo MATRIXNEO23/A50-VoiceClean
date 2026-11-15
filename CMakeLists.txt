@@ -29,6 +29,27 @@ if(WIN32)
     add_subdirectory("${rnnoise_vendor_SOURCE_DIR}/src" "${rnnoise_vendor_BINARY_DIR}/src" EXCLUDE_FROM_ALL)
   endif()
 
+
+  # Spectral pitch/formant DSP pinned for deterministic, AVX2-free builds.
+  FetchContent_Declare(stretch_vendor
+    GIT_REPOSITORY https://github.com/Signalsmith-Audio/signalsmith-stretch.git
+    GIT_TAG 88061fd4eda56a2353c5d65c74aa3f4ccf76f9da
+  )
+  FetchContent_GetProperties(stretch_vendor)
+  if(NOT stretch_vendor_POPULATED)
+    FetchContent_Populate(stretch_vendor)
+  endif()
+  FetchContent_Declare(linear_vendor
+    GIT_REPOSITORY https://github.com/Signalsmith-Audio/linear.git
+    GIT_TAG 7bb1c8f36794d6980080ce817c91f8da8fe56a66
+  )
+  FetchContent_GetProperties(linear_vendor)
+  if(NOT linear_vendor_POPULATED)
+    FetchContent_Populate(linear_vendor)
+  endif()
+  set(SIGNALSMITH_INCLUDE_DIRS
+    "${stretch_vendor_SOURCE_DIR}"
+    "${linear_vendor_SOURCE_DIR}/include")
   add_executable(A50VoiceClean-Control WIN32 src/live_gui_win.cpp)
   target_link_libraries(A50VoiceClean-Control PRIVATE comctl32 ole32 uuid)
   target_compile_definitions(A50VoiceClean-Control PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -48,11 +69,11 @@ if(WIN32)
     target_compile_options(A50VoiceClean-MicTest PRIVATE /W4 /EHsc)
   endif()
   add_executable(A50VoiceClean-Live src/live_route_win.cpp src/rnnoise_filter.cpp)
-  target_include_directories(A50VoiceClean-Live PRIVATE "${rnnoise_vendor_SOURCE_DIR}/include")
+  target_include_directories(A50VoiceClean-Live PRIVATE "${rnnoise_vendor_SOURCE_DIR}/include" ${SIGNALSMITH_INCLUDE_DIRS})
   target_link_libraries(A50VoiceClean-Live PRIVATE a50_dsp ole32 uuid rnnoise_static)
   target_compile_definitions(A50VoiceClean-Live PRIVATE UNICODE _UNICODE)
   if(MSVC)
-    target_compile_options(A50VoiceClean-Live PRIVATE /W4 /EHsc)
+    target_compile_options(A50VoiceClean-Live PRIVATE /W4 /EHsc /bigobj)
   endif()
 endif()
 
@@ -83,6 +104,13 @@ if(BUILD_TESTING)
     target_include_directories(a50_live_profiles_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME a50_live_profiles_tests COMMAND a50_live_profiles_tests)
     add_test(NAME a50_live_cli_help COMMAND A50VoiceClean-Live --help)
+    add_executable(a50_formant_voice_tests tests/test_formant_voice.cpp)
+    target_include_directories(a50_formant_voice_tests PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/src" ${SIGNALSMITH_INCLUDE_DIRS})
+    if(MSVC)
+      target_compile_options(a50_formant_voice_tests PRIVATE /bigobj)
+    endif()
+    add_test(NAME a50_formant_voice_tests COMMAND a50_formant_voice_tests)
     add_executable(a50_rnnoise_tests tests/test_rnnoise.cpp src/rnnoise_filter.cpp)
     target_include_directories(a50_rnnoise_tests PRIVATE
       "${CMAKE_CURRENT_SOURCE_DIR}/src" "${rnnoise_vendor_SOURCE_DIR}/include")
