@@ -45,6 +45,8 @@ Name: "vbcable"; Description: "VB-CABLE (VB-Audio, driver donationware indipende
 Source: "..\build\Release\A50VoiceClean-Control.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: app
 Source: "..\build\Release\A50VoiceClean-Live.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: app
 Source: "..\third_party_licenses\RNNOISE_COPYING.txt"; DestDir: "{app}\Licenze"; Flags: ignoreversion; Components: app
+Source: "..\third_party_licenses\SIGNALSMITH_STRETCH_LICENSE.txt"; DestDir: "{app}\Licenze"; Flags: ignoreversion; Components: app
+Source: "..\third_party_licenses\SIGNALSMITH_LINEAR_LICENSE.txt"; DestDir: "{app}\Licenze"; Flags: ignoreversion; Components: app
 Source: "VBCABLE_NOTICE.txt"; DestDir: "{app}"; Flags: ignoreversion; Components: app
 Source: "..\vendor\staged\*"; DestDir: "{app}\ThirdParty\VB-CABLE"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: vbcable
 
