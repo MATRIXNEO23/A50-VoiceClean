@@ -493,7 +493,7 @@ int wmain(int argc,wchar_t** argv) {
         int selected_in=-1,selected_out=-1,seconds=0;
         bool list_only=false,allow_speakers=false,denoise_enabled=true,vad_enabled=true;
         bool preview_only=false,monitor_initially_on=false;
-        bool clarity_initially_on=true;
+        bool clarity_initially_on=false;
         float denoise_strength=0.80f;
         float monitor_volume=0.35f;
         std::wstring monitor_id;
