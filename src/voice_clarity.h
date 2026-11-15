@@ -9,7 +9,7 @@ namespace a50 {
 // No model, dynamic allocation or AVX2. Keeps quiet consonants when RNNoise
 // attenuates them, reduces excessive low end and adds modest speech presence.
 // Speech-aware AGC boosts low speech without amplifying silent room noise.
-// The switch is fully reversible: disabled means the original RNNoise output.
+// AGC/EQ switch is reversible and independent of the adaptive noise mix.
 class VoiceClarity {
     bool enabled_ = false;
     float denoise_strength_ = 0.80f; // 0=original signal; 1=full RNNoise
@@ -39,17 +39,6 @@ public:
                  const std::array<float,480>& cleaned,
                  float speech_probability,
                  std::array<float,480>& output) noexcept {
-        // Independent smoothed wet/dry RNNoise control, even with AGC/EQ off.
-        std::array<float,480> mixed{};
-        for(std::size_t i=0;i<480;++i) {
-            const float raw=std::isfinite(original[i])
-                ? std::clamp(original[i],-1.f,1.f) : 0.f;
-            const float filtered=std::isfinite(cleaned[i])
-                ? std::clamp(cleaned[i],-1.f,1.f) : 0.f;
-            smoothed_strength_+=0.0025f*(denoise_strength_-smoothed_strength_);
-            mixed[i]=filtered*smoothed_strength_+raw*(1.f-smoothed_strength_);
-        }
-        if(!enabled_) { output=mixed; return; }
         float sum=0.f;
         for(float sample:original) {
             const float s=std::isfinite(sample)?std::clamp(sample,-1.f,1.f):0.f;
@@ -62,7 +51,20 @@ public:
         const bool speech=probability>=0.12f && raw_rms>=0.0015f;
         if(speech) voice_hold_=30; // Hold through s/f/t consonants for ~300 ms.
         else if(voice_hold_>0) --voice_hold_;
-        // AGC/EQ does not control the RNNoise wet/dry amount.
+        // Only restore original consonant detail during speech. During pauses,
+        // use full RNNoise to prevent the wet/dry blend reintroducing hiss.
+        const float target_strength=(voice_hold_>0)?denoise_strength_:1.f;
+        std::array<float,480> mixed{};
+        for(std::size_t i=0;i<480;++i) {
+            const float raw=std::isfinite(original[i])
+                ? std::clamp(original[i],-1.f,1.f) : 0.f;
+            const float filtered=std::isfinite(cleaned[i])
+                ? std::clamp(cleaned[i],-1.f,1.f) : 0.f;
+            smoothed_strength_+=0.0025f*(target_strength-smoothed_strength_);
+            mixed[i]=filtered*smoothed_strength_+raw*(1.f-smoothed_strength_);
+        }
+        if(!enabled_) { output=mixed; return; }
+        // AGC/EQ is optional and never owns the RNNoise mix.
         const float low_coeff=pole(210.f);
         const float presence_low_coeff=pole(1600.f);
         const float presence_high_coeff=pole(4300.f);
