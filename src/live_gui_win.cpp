@@ -373,7 +373,7 @@ void start_engine() {
          static_cast<std::size_t>(monitor_selection)<monitor_output_indices.size();
     const bool preview_only=!cable_ok;
     if(!cable_ok && !listen) {
-        message(L"Senza VB-CABLE attiva 'Ascolta la mia voce' per la sola prova in cuffia.");
+        message(L"Senza VB-CABLE usa 'Ascolta la mia voce' per la modalita autonoma.");
         return;
     }
     if(listen && !headset_ok) {
@@ -468,8 +468,8 @@ void start_engine() {
         EnableWindow(monitor_combo,FALSE);
         EnableWindow(out_combo,FALSE);
         message(preview_only
-            ? L"Ascolto ASTRO attivo: parla e sposta i cursori. Jarvis non riceve l'audio filtrato."
-            : L"VB-CABLE attivo: l'ascolto cuffie si regola in diretta. Jarvis usa CABLE Output.");
+            ? L"Modalita autonoma: ascolto ASTRO attivo. Nessuna altra app necessaria."
+            : L"Microfono virtuale attivo. Altre app possono usare CABLE Output.");
     } catch(const std::exception&) {
         if(process.hProcess) stop_engine();
         else cleanup();
@@ -483,7 +483,7 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         control(L"STATIC",L"A50 VoiceClean | ASTRO A50 Gen 4 | Live",0,18,15,960,22);
         control(L"STATIC",L"Microfono in ingresso",0,20,56,240,20);
         in_combo=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,20,79,828,300,InputSelect);
-        control(L"STATIC",L"Uscita audio virtuale (VB-CABLE)",0,20,127,380,20);
+        control(L"STATIC",L"Uscita virtuale (VB-CABLE facoltativo)",0,20,127,400,20);
         out_combo=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,20,151,828,300,OutputSelect);
         control(L"BUTTON",L"Aggiorna",BS_PUSHBUTTON,868,79,120,29,Refresh);
 
@@ -513,7 +513,7 @@ LRESULT CALLBACK procedure(HWND h,UINT m,WPARAM w,LPARAM l) {
         set_slider(floor_slider,-80,-20,-46);
         clarity_check=control(L"BUTTON",L"Parlato piano: piu chiaro",BS_AUTOCHECKBOX,
                               20,450,240,26,ClarityCheck);
-        SendMessageW(clarity_check,BM_SETCHECK,BST_CHECKED,0);
+        SendMessageW(clarity_check,BM_SETCHECK,BST_UNCHECKED,0);
         control(L"STATIC",L"Pulizia RNNoise",0,275,455,125,18);
         denoise_strength_slider=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS,
                                        403,443,143,35,DenoiseStrengthSlider);
