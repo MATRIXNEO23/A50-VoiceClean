@@ -330,6 +330,11 @@ void route(IMMDevice* microphone, IMMDevice* destination,
     a50::Processor dsp(in.rate,settings);
     // Voice DSP follows RNNoise/VAD so the noise model sees original speech.
     a50::FormantVoice formant_voice;
+    formant_voice.set_settings(
+        voice_settings.pitch_semitones,
+        std::clamp(voice_settings.pitch_semitones*0.65f+
+                   voice_settings.resonance*3.f,-12.f,12.f),
+        voice_settings.effect_mix);
     a50::Settings voice_eq_settings=voice_settings;
     voice_eq_settings.pitch_semitones=0.f; // No duplicate granular pitch shift.
     a50::Processor voice_48k(48000,voice_eq_settings);
