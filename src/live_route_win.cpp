@@ -332,8 +332,7 @@ void route(IMMDevice* microphone, IMMDevice* destination,
     a50::FormantVoice formant_voice;
     formant_voice.set_settings(
         voice_settings.pitch_semitones,
-        std::clamp(voice_settings.pitch_semitones*0.65f+
-                   voice_settings.resonance*3.f,-12.f,12.f),
+        a50::formant_semitones_from_timbre(voice_settings.resonance),
         voice_settings.effect_mix);
     a50::Settings voice_eq_settings=voice_settings;
     voice_eq_settings.pitch_semitones=0.f; // No duplicate granular pitch shift.
@@ -378,8 +377,7 @@ void route(IMMDevice* microphone, IMMDevice* destination,
                         voice_48k.set_settings(voice_eq_settings);
                         formant_voice.set_settings(
                             voice_settings.pitch_semitones,
-                            std::clamp(voice_settings.pitch_semitones*0.65f+
-                                       voice_settings.resonance*3.f,-12.f,12.f),
+                            a50::formant_semitones_from_timbre(voice_settings.resonance),
                             voice_settings.effect_mix);
                         if(vad) vad->set_sensitivity(
                             std::clamp(vals.probability_milli/1000.f,0.f,1.f),
