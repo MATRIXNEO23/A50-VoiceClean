@@ -336,6 +336,9 @@ void route(IMMDevice* microphone, IMMDevice* destination,
         voice_settings.effect_mix);
     a50::Settings voice_eq_settings=voice_settings;
     voice_eq_settings.pitch_semitones=0.f; // No duplicate granular pitch shift.
+    // Formants are already transformed spectrally: do not recolor the same
+    // vocal envelope a second time in the legacy voice EQ.
+    voice_eq_settings.resonance=0.f;
     a50::Processor voice_48k(48000,voice_eq_settings);
     std::array<float,480> passthrough_frame{};
     std::size_t passthrough_used=0;
@@ -374,6 +377,7 @@ void route(IMMDevice* microphone, IMMDevice* destination,
                         voice_settings.effect_mix=std::clamp(vals.mix_milli/1000.f,0.f,1.f);
                         voice_eq_settings=voice_settings;
                         voice_eq_settings.pitch_semitones=0.f;
+                        voice_eq_settings.resonance=0.f; // Avoid double timbre coloring.
                         voice_48k.set_settings(voice_eq_settings);
                         formant_voice.set_settings(
                             voice_settings.pitch_semitones,
