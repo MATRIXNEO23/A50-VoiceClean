@@ -81,3 +81,11 @@ Non distribuire il secondo artifact come **release finale** fino al collaudo har
 Per il dettaglio e le checklist: [docs/STEP_01_WASAPI.md](docs/STEP_01_WASAPI.md) fino a [docs/STEP_10_DEVICE_ID.md](docs/STEP_10_DEVICE_ID.md).
 
 La v0.2 WAV resta un componente distinto e non deve essere confusa con il filtro live sperimentale.
+
+## Modalita autonoma e pulizia naturale (ramo sperimentale)
+
+- VoiceClean elabora direttamente l'audio ASTRO tramite WASAPI, senza dipendere da Lumi, Jarvis o altri programmi.
+- Senza VB-CABLE puo inviare il segnale elaborato alle cuffie ASTRO A50 Game in modalita ascolto autonomo; non diventa in questo caso un dispositivo microfono virtuale di Windows.
+- VB-CABLE e facoltativo ed e richiesto soltanto se si vuole consegnare il segnale elaborato come *microfono virtuale* ad altre applicazioni. Per rimuoverlo anche da questo caso serve un driver microfono virtuale alternativo, non un semplice cambio d'uscita.
+- La regolazione percentuale RNNoise e indipendente da «Parlato piano»: 0% miscela solo ingresso originale, 100% solo RNNoise; le variazioni sono smussate contro gli scatti. L'AGC/EQ «Parlato piano» parte spento per evitare artefatti segnalati durante il collaudo.
+- Queste correzioni NON costituiscono una build definitiva e non dimostrano ancora la qualita del timbro femminile. Non installare build intermedie come release.
