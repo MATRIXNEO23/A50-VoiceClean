@@ -33,8 +33,8 @@ InfoBeforeFile=VBCABLE_NOTICE.txt
 Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
 
 [Types]
-Name: "full"; Description: "Completa (con driver audio VB-CABLE)"
-Name: "compact"; Description: "Solo A50 VoiceClean"
+Name: "compact"; Description: "VoiceClean autonomo (consigliato, senza driver extra)"
+Name: "full"; Description: "VoiceClean con VB-CABLE facoltativo per altre applicazioni"
 Name: "custom"; Description: "Personalizzata"; Flags: iscustom
 
 [Components]
